@@ -1,4 +1,4 @@
-# pet_transfer_adoption Contract
+# Pet Transfer Adoption Contract
 
 `pet_transfer_adoption` provides a minimal Soroban ownership-transfer flow for pets. It tracks the current owner, keeps an ownership history per pet, and supports pending transfers that can be accepted, cancelled, or reclaimed after expiry.
 
