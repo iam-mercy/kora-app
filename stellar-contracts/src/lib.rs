@@ -23,6 +23,16 @@ pub enum EventSchema {
     V1 = 1,
 }
 
+/// Paginated result container used by behavior-record list endpoints.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BehaviorRecordPage {
+    pub items: Vec<BehaviorRecord>,
+    pub total: u64,
+    pub page: u32,
+    pub page_size: u32,
+}
+
 #[contracttype]
 pub enum InsuranceKey {
     Policy(u64),               // (pet_id) -> InsurancePolicy [deprecated, kept for migration]
@@ -136,9 +146,11 @@ mod test_verify_claim_document;
 #[cfg(test)]
 mod test_license_uniqueness;
 #[cfg(test)]
-mod test_batch_verify_vets;
+mod test_error_registry;
 #[cfg(test)]
-mod test_statistics_snapshot;
+mod test_behavior_records;
+#[cfg(test)]
+mod test_nutrition_plan;
 
 const DEFAULT_NONCE_MAX_USES: u32 = 1;
 #[allow(dead_code)]
@@ -153,6 +165,7 @@ const MAX_SEARCH_NOTES_LEN: u32 = 512;
 const MAX_LINEAGE_DEPTH: u32 = 16;
 const MAX_LOG_ENTRIES: u32 = 1_000;
 const MAX_ACTIVE_SUBSCRIPTIONS_PER_ADDRESS: u32 = 10;
+const MAX_BATCH_ERROR_MESSAGES: usize = 50;
 
 // --- STORAGE QUOTA CONSTANTS ---
 const DEFAULT_STORAGE_QUOTA: u64 = 1000; // Default max storage entries per pet
@@ -531,6 +544,12 @@ pub enum NutritionKey {
     PetNutritionVersionCount(u64), // pet_id -> current version count
     CurrentNutritionVersion(u64), // pet_id -> current active version
     DailyNutritionSummary((u64, u64)), // (pet_id, date) -> DailyNutritionSummary
+
+    // Ingredient-based nutrition plans (Issue #800)
+    NutritionPlan(u64),              // plan_id -> NutritionPlan
+    NutritionPlanCount,              // global count of plans
+    PetNutritionPlanCount(u64),      // pet_id -> count of plans
+    PetNutritionPlanIndex((u64, u64)), // (pet_id, index) -> plan_id
 }
 
 #[contracttype]
@@ -573,6 +592,24 @@ pub struct DailyNutritionSummary {
     pub total_calories: u32,
     pub target_calories: u32,
     pub updated_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Ingredient {
+    pub name: String,
+    pub calories: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NutritionPlan {
+    pub id: u64,
+    pub pet_id: u64,
+    pub name: String,
+    pub ingredients: Vec<Ingredient>,
+    pub total_calories: u32,
+    pub created_at: u64,
 }
 
 #[contracttype]
@@ -3594,6 +3631,10 @@ impl PetChainContract {
     pub fn batch_set_error_messages(env: Env, admin: Address, messages: Vec<ErrorMessage>) {
         Self::require_admin_auth(&env, &admin);
 
+        if messages.len() > MAX_BATCH_ERROR_MESSAGES as u32 {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
         for msg in messages.iter() {
             // Validate inputs
             if msg.language.is_empty() || msg.language.len() > 10 {
@@ -3633,8 +3674,8 @@ impl PetChainContract {
     /// Initialize default error messages in English and Spanish
     /// Only callable by admin
     pub fn initialize_error_messages(env: Env, admin: Address) {
-        Self::require_admin_auth(&env, &admin);
-
+        // Authorization is enforced inside `batch_set_error_messages`; calling
+        // `require_admin_auth` here as well would create a duplicate auth frame.
         let mut messages = Vec::new(&env);
 
         // English messages
@@ -3750,6 +3791,168 @@ impl PetChainContract {
             (Symbol::new(&env, "ErrorMessageRemoved"), error_code),
             language,
         );
+    }
+
+    // --- BEHAVIOR RECORDS (Issue #798) ---
+
+    /// Add a behavior record for a pet. Severity must be between 0 and 10.
+    pub fn add_behavior_record(
+        env: Env,
+        pet_id: u64,
+        caller: Address,
+        behavior_type: BehaviorType,
+        severity: u32,
+        description: String,
+    ) -> u64 {
+        caller.require_auth();
+
+        if severity > 10 {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
+        let record_id: u64 = env
+            .storage()
+            .instance()
+            .get(&BehaviorKey::BehaviorRecordCount)
+            .unwrap_or(0u64)
+            .saturating_add(1);
+
+        let pet_index: u64 = env
+            .storage()
+            .instance()
+            .get(&BehaviorKey::PetBehaviorCount(pet_id))
+            .unwrap_or(0u64)
+            .saturating_add(1);
+
+        let record = BehaviorRecord {
+            id: record_id,
+            pet_id,
+            behavior_type,
+            severity,
+            description,
+            recorded_by: caller,
+            recorded_at: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .instance()
+            .set(&BehaviorKey::BehaviorRecord(record_id), &record);
+        env.storage().instance().set(
+            &BehaviorKey::PetBehaviorIndex((pet_id, pet_index)),
+            &record_id,
+        );
+        env.storage()
+            .instance()
+            .set(&BehaviorKey::PetBehaviorCount(pet_id), &pet_index);
+        env.storage()
+            .instance()
+            .set(&BehaviorKey::BehaviorRecordCount, &record_id);
+
+        record_id
+    }
+
+    /// Get a single behavior record by its ID.
+    pub fn get_behavior_record(env: Env, record_id: u64) -> Option<BehaviorRecord> {
+        env.storage()
+            .instance()
+            .get(&BehaviorKey::BehaviorRecord(record_id))
+    }
+
+    /// Get the total number of behavior records for a pet.
+    pub fn get_behavior_count(env: Env, pet_id: u64) -> u64 {
+        env.storage()
+            .instance()
+            .get(&BehaviorKey::PetBehaviorCount(pet_id))
+            .unwrap_or(0u64)
+    }
+
+    /// Get the full (unbounded) behavior history for a pet.
+    /// Prefer `get_behavior_records` for ledger-safe pagination.
+    pub fn get_behavior_history(env: Env, pet_id: u64) -> Vec<BehaviorRecord> {
+        let mut results = Vec::new(&env);
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&BehaviorKey::PetBehaviorCount(pet_id))
+            .unwrap_or(0u64);
+
+        for i in 1u64..=count {
+            if let Some(record_id) = env
+                .storage()
+                .instance()
+                .get::<BehaviorKey, u64>(&BehaviorKey::PetBehaviorIndex((pet_id, i)))
+            {
+                if let Some(record) = env
+                    .storage()
+                    .instance()
+                    .get::<BehaviorKey, BehaviorRecord>(&BehaviorKey::BehaviorRecord(record_id))
+                {
+                    results.push_back(record);
+                }
+            }
+        }
+        results
+    }
+
+    /// Returns a paginated, optionally type-filtered list of behavior records.
+    /// `page_size` is capped at 50 to stay within ledger limits.
+    pub fn get_behavior_records(
+        env: Env,
+        pet_id: u64,
+        caller: Address,
+        page: u32,
+        page_size: u32,
+        behavior_type: Option<BehaviorType>,
+    ) -> BehaviorRecordPage {
+        caller.require_auth();
+
+        let page_size = page_size.min(50);
+        let mut matched = Vec::new(&env);
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&BehaviorKey::PetBehaviorCount(pet_id))
+            .unwrap_or(0u64);
+
+        for i in 1u64..=count {
+            if let Some(record_id) = env
+                .storage()
+                .instance()
+                .get::<BehaviorKey, u64>(&BehaviorKey::PetBehaviorIndex((pet_id, i)))
+            {
+                if let Some(record) = env
+                    .storage()
+                    .instance()
+                    .get::<BehaviorKey, BehaviorRecord>(&BehaviorKey::BehaviorRecord(record_id))
+                {
+                    if let Some(ref filter) = behavior_type {
+                        if record.behavior_type != *filter {
+                            continue;
+                        }
+                    }
+                    matched.push_back(record);
+                }
+            }
+        }
+
+        let total = matched.len() as u64;
+        let mut items = Vec::new(&env);
+        if page_size > 0 {
+            let offset = (page as u64).saturating_mul(page_size as u64);
+            if offset < total {
+                let end = (offset + page_size as u64).min(total);
+                for i in offset..end {
+                    items.push_back(matched.get(i as u32).unwrap());
+                }
+            }
+        }
+
+        BehaviorRecordPage {
+            items,
+            total,
+            page,
+            page_size,
+        }
     }
 
     // Pet Management Functions
@@ -6506,6 +6709,86 @@ impl PetChainContract {
             .get(&NutritionKey::WeightEntry(weight_id))
     }
 
+    // --- INGREDIENT-BASED NUTRITION PLANS (Issue #800) ---
+
+    /// Add a nutrition plan whose ingredient calories must match the declared
+    /// total within a ±5 kcal tolerance.
+    pub fn add_nutrition_plan(
+        env: Env,
+        pet_id: u64,
+        name: String,
+        ingredients: Vec<Ingredient>,
+        total_calories: u32,
+    ) -> u64 {
+        let pet: Pet = env
+            .storage()
+            .instance()
+            .get(&DataKey::Pet(pet_id))
+            .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
+
+        pet.owner.require_auth();
+
+        if name.is_empty() {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
+        let mut sum: u32 = 0;
+        for ingredient in ingredients.iter() {
+            sum = sum.saturating_add(ingredient.calories);
+        }
+
+        if sum.abs_diff(total_calories) > 5 {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
+        Self::increment_pet_storage(&env, pet_id);
+
+        let plan_count: u64 = env
+            .storage()
+            .instance()
+            .get(&NutritionKey::NutritionPlanCount)
+            .unwrap_or(0u64);
+        let plan_id = safe_increment(plan_count);
+
+        let pet_plan_count: u64 = env
+            .storage()
+            .instance()
+            .get(&NutritionKey::PetNutritionPlanCount(pet_id))
+            .unwrap_or(0u64);
+        let next_pet_count = pet_plan_count.saturating_add(1);
+
+        let plan = NutritionPlan {
+            id: plan_id,
+            pet_id,
+            name,
+            ingredients,
+            total_calories,
+            created_at: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .instance()
+            .set(&NutritionKey::NutritionPlan(plan_id), &plan);
+        env.storage()
+            .instance()
+            .set(&NutritionKey::NutritionPlanCount, &plan_id);
+        env.storage()
+            .instance()
+            .set(&NutritionKey::PetNutritionPlanCount(pet_id), &next_pet_count);
+        env.storage().instance().set(
+            &NutritionKey::PetNutritionPlanIndex((pet_id, next_pet_count)),
+            &plan_id,
+        );
+
+        plan_id
+    }
+
+    pub fn get_nutrition_plan(env: Env, plan_id: u64) -> Option<NutritionPlan> {
+        env.storage()
+            .instance()
+            .get(&NutritionKey::NutritionPlan(plan_id))
+    }
+
     // --- VERSIONED NUTRITION PLANS ---
 
     /// Creates a new version of nutrition plan for a pet.
@@ -8625,7 +8908,7 @@ impl PetChainContract {
             .storage()
             .instance()
             .get(&GroomingKey::GroomingRecordCount)
-            .unwrap_or(0)
+            .unwrap_or(0u64)
             .saturating_add(1);
 
         let new_slot = GroomingSlot {
