@@ -10,8 +10,8 @@ Thank you for your interest in contributing to Kora App! This guide will help yo
 
 ### Setup
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/Kora-App-Contracts.git`
-3. Navigate to project: `cd Kora-App-Contracts`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/kora-app.git`
+3. Navigate to project: `cd kora-app`
 4. Build contracts: `cd stellar-contracts && cargo build --target wasm32-unknown-unknown --release`
 5. Run tests: `cargo test`
 
