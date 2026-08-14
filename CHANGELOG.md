@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Kora-App-Contracts project will be documented in this file.
+All notable changes to the Kora App project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -164,5 +164,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Secure backup code generation and invalidation after use
 - HTTPS enforcement recommendations for backend services
 
-[unreleased]: https://github.com/DogStark/Kora-App-Contracts/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/DogStark/Kora-App-Contracts/releases/tag/v0.1.0
+[unreleased]: https://github.com/iam-mercy/kora-app/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/iam-mercy/kora-app/releases/tag/v0.1.0
