@@ -1,6 +1,6 @@
 # Stellar Contracts
 
-This crate contains the main Soroban smart contract for PetChain, plus the nested transfer/adoption contract package under `contracts/pet-transfer-adoption/`.
+This crate contains the main Soroban smart contract for Kora App, plus the nested transfer/adoption contract package under `contracts/pet-transfer-adoption/`.
 
 ## Commands
 

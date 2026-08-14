@@ -1,12 +1,12 @@
 use crate::*;
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-fn setup() -> (Env, PetChainContractClient<'static>, Address, Address, Address, Address, u64) {
+fn setup() -> (Env, KoraContractClient<'static>, Address, Address, Address, Address, u64) {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.init_admin(&admin);
@@ -95,7 +95,7 @@ fn test_submit_evidence_and_review_flow() {
 // --- Reputation-based arbitrator tests ---
 
 fn full_dispute(
-    client: &PetChainContractClient,
+    client: &KoraContractClient,
     env: &Env,
     pet_id: u64,
     owner: &Address,

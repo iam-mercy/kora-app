@@ -4,19 +4,19 @@
 
 #[cfg(test)]
 mod test_audit_ledger {
-    use crate::{Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species};
+    use crate::{Gender, KoraContract, KoraContractClient, PrivacyLevel, Species};
     use soroban_sdk::{
         testutils::{Address as _, Ledger as _},
         Address, Env, String,
     };
 
-    fn setup() -> (Env, PetChainContractClient<'static>, Address, u64) {
+    fn setup() -> (Env, KoraContractClient<'static>, Address, u64) {
         let env = Env::default();
         env.mock_all_auths();
 
         let admin = Address::generate(&env);
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         client.init_admin(&admin);
 
         let owner = Address::generate(&env);

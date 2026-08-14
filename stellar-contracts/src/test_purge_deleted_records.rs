@@ -1,13 +1,13 @@
-use crate::{Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species};
+use crate::{Gender, KoraContract, KoraContractClient, PrivacyLevel, Species};
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     Address, Env, String, Vec,
 };
 
-fn setup(env: &Env) -> (PetChainContractClient<'_>, Address, Address, u64) {
+fn setup(env: &Env) -> (KoraContractClient<'_>, Address, Address, u64) {
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
 
     let admin = Address::generate(env);
     let vet = Address::generate(env);
@@ -39,7 +39,7 @@ fn setup(env: &Env) -> (PetChainContractClient<'_>, Address, Address, u64) {
 }
 
 fn add_record(
-    client: &PetChainContractClient<'_>,
+    client: &KoraContractClient<'_>,
     env: &Env,
     vet: &Address,
     pet_id: u64,

@@ -1,17 +1,17 @@
-use crate::{CustodyEntry, Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species, SystemKey, TransferType};
+use crate::{CustodyEntry, Gender, KoraContract, KoraContractClient, PrivacyLevel, Species, SystemKey, TransferType};
 use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
 
-fn setup(env: &Env) -> (PetChainContractClient, Address, Address) {
+fn setup(env: &Env) -> (KoraContractClient, Address, Address) {
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
     let owner = Address::generate(env);
     let new_owner = Address::generate(env);
     client.init_admin(&owner);
     (client, owner, new_owner)
 }
 
-fn register_pet(client: &PetChainContractClient, env: &Env, owner: &Address) -> u64 {
+fn register_pet(client: &KoraContractClient, env: &Env, owner: &Address) -> u64 {
     client.register_pet(
         owner,
         &String::from_str(env, "Buddy"),
@@ -171,8 +171,8 @@ fn verify_custody_chain_valid_for_consistent_chain() {
 #[test]
 fn verify_custody_chain_detects_gap_at_index() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let a = Address::generate(&env);
     let b = Address::generate(&env);
@@ -208,8 +208,8 @@ fn verify_custody_chain_detects_gap_at_index() {
 #[test]
 fn verify_custody_chain_detects_forked_chain() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let a = Address::generate(&env);
     let b = Address::generate(&env);
@@ -245,8 +245,8 @@ fn verify_custody_chain_detects_forked_chain() {
 #[test]
 fn verify_custody_chain_detects_current_owner_mismatch() {
     let env = Env::default();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let new_owner = Address::generate(&env);
     let stranger = Address::generate(&env);

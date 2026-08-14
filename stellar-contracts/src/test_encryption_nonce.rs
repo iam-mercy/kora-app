@@ -1,7 +1,7 @@
-use crate::{Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species};
+use crate::{Gender, KoraContract, KoraContractClient, PrivacyLevel, Species};
 use soroban_sdk::{testutils::Address as _, Address, Bytes, Env, String};
 
-fn register_test_pet(env: &Env, client: &PetChainContractClient, owner: &Address) -> u64 {
+fn register_test_pet(env: &Env, client: &KoraContractClient, owner: &Address) -> u64 {
     client.register_pet(
         owner,
         &String::from_str(env, "Nonce"),
@@ -20,8 +20,8 @@ fn register_test_pet(env: &Env, client: &PetChainContractClient, owner: &Address
 fn test_rotate_nonce_generates_new_nonce() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let pet_id = register_test_pet(&env, &client, &owner);
     let key_id = String::from_str(&env, "profile");
@@ -39,8 +39,8 @@ fn test_rotate_nonce_generates_new_nonce() {
 fn test_rejects_nonce_reuse_after_default_limit() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let pet_id = register_test_pet(&env, &client, &owner);
     let key_id = String::from_str(&env, "profile");
@@ -54,8 +54,8 @@ fn test_rejects_nonce_reuse_after_default_limit() {
 fn test_configurable_nonce_use_limit_and_history_pruning() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let pet_id = register_test_pet(&env, &client, &owner);
     let key_id = String::from_str(&env, "session");

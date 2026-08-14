@@ -1,9 +1,9 @@
-use crate::{ContractError, PetChainContract, PetChainContractClient};
+use crate::{ContractError, KoraContract, KoraContractClient};
 use soroban_sdk::{testutils::Address as _, vec, Address, Env};
 
-fn setup_multisig(env: &Env) -> (PetChainContractClient, Address, Address, Address) {
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+fn setup_multisig(env: &Env) -> (KoraContractClient, Address, Address, Address) {
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
 
     let admin1 = Address::generate(env);
     let admin2 = Address::generate(env);
@@ -34,8 +34,8 @@ fn test_remove_admin_threshold_violated() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin1 = Address::generate(&env);
     let admin2 = Address::generate(&env);
@@ -54,8 +54,8 @@ fn test_remove_admin_safe_case() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin1 = Address::generate(&env);
     let admin2 = Address::generate(&env);
@@ -81,8 +81,8 @@ fn test_remove_admin_threshold_one() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin1 = Address::generate(&env);
     let admin2 = Address::generate(&env);

@@ -1,5 +1,5 @@
 [package]
-name = "petchain-stellar"
+name = "kora-stellar"
 version = "0.1.0"
 edition = "2021"
 

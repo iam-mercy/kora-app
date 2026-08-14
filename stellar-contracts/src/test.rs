@@ -12,8 +12,8 @@ mod test {
         env.mock_all_auths();
         env.budget().reset_unlimited();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let name = String::from_str(&env, "Buddy");
@@ -42,8 +42,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let name = String::from_str(&env, "John Doe");
@@ -61,8 +61,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let vet = Address::generate(&env);
         let owner = Address::generate(&env);
@@ -121,8 +121,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let pet_id = client.register_pet(
@@ -157,8 +157,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let pet_id = client.register_pet(
@@ -187,8 +187,8 @@ mod test {
     fn test_tag_id_uniqueness() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
 
@@ -222,8 +222,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let pet_id = client.register_pet(
@@ -255,8 +255,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let vet = Address::generate(&env);
@@ -311,8 +311,8 @@ mod test {
     fn test_set_and_get_emergency_contacts() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let pet_id = client.register_pet(
@@ -347,8 +347,8 @@ mod test {
     fn test_lab_results() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let vet = Address::generate(&env);
@@ -386,8 +386,8 @@ mod test {
     fn test_update_medical_record() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let vet = Address::generate(&env);
@@ -494,8 +494,8 @@ mod test {
     fn test_update_medical_record_nonexistent() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let meds = Vec::new(&env);
         let success = client.update_medical_record(
@@ -514,8 +514,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let pet_id = client.register_pet(
@@ -545,8 +545,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let pet_id = client.register_pet(
@@ -578,8 +578,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let pet_id = client.register_pet(
@@ -610,8 +610,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
 
@@ -647,8 +647,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let pet_id = client.register_pet(
@@ -684,8 +684,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
         let pet_id = client.register_pet(
@@ -709,8 +709,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let vet = Address::generate(&env);
         let admin = Address::generate(&env);
@@ -749,8 +749,8 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let vet = Address::generate(&env);
         let admin = Address::generate(&env);
@@ -782,8 +782,8 @@ mod test {
     #[test]
     fn test_get_version() {
         let env = Env::default();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         let version = client.get_version();
         assert_eq!(version.major, 1);
@@ -794,8 +794,8 @@ mod test {
     #[test]
     fn test_propose_upgrade() {
         let env = Env::default();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         env.mock_all_auths();
 
         let admin = Address::generate(&env);
@@ -814,8 +814,8 @@ mod test {
     #[test]
     fn test_approve_upgrade() {
         let env = Env::default();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         env.mock_all_auths();
 
         let admin = Address::generate(&env);
@@ -834,8 +834,8 @@ mod test {
     #[test]
     fn test_migrate_version() {
         let env = Env::default();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         env.mock_all_auths();
 
         let admin = Address::generate(&env);
@@ -853,8 +853,8 @@ mod test {
     #[should_panic]
     fn test_upgrade_requires_admin() {
         let env = Env::default();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         env.mock_all_auths();
 
         // No admin set - should panic

@@ -1,4 +1,4 @@
-name: PetChain Stellar Contracts
+name: Kora App Stellar Contracts
 
 on:
   workflow_dispatch:

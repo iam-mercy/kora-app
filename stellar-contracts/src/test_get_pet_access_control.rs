@@ -8,7 +8,7 @@
 #[cfg(test)]
 mod test_get_pet_access_control {
     use crate::{
-        AccessLevel, Gender, PetChainContract, PetChainContractClient, PetData, PrivacyLevel,
+        AccessLevel, Gender, KoraContract, KoraContractClient, PetData, PrivacyLevel,
         Species,
     };
     use soroban_sdk::{
@@ -18,16 +18,16 @@ mod test_get_pet_access_control {
 
     // ---- helpers ----
 
-    fn setup() -> (Env, PetChainContractClient<'static>) {
+    fn setup() -> (Env, KoraContractClient<'static>) {
         let env = Env::default();
         env.mock_all_auths();
-        let id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &id);
+        let id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &id);
         (env, client)
     }
 
     fn register(
-        client: &PetChainContractClient,
+        client: &KoraContractClient,
         env: &Env,
         owner: &Address,
         privacy: PrivacyLevel,

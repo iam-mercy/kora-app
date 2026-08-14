@@ -1,5 +1,5 @@
 use crate::{
-    Gender, InsuranceClaimStatus, PetChainContract, PetChainContractClient, PrivacyLevel, Species,
+    Gender, InsuranceClaimStatus, KoraContract, KoraContractClient, PrivacyLevel, Species,
 };
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
@@ -7,9 +7,9 @@ use soroban_sdk::{testutils::Address as _, Address, Env, String};
 const VALID_CID: &str = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
 const VALID_CID2: &str = "QmSoLPppuBtQSGwKDZT2M73ULpjvfd3aZ6ha4oFGL1KrGM";
 
-fn setup(env: &Env) -> (PetChainContractClient, Address, Address, u64) {
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+fn setup(env: &Env) -> (KoraContractClient, Address, Address, u64) {
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
     let admin = Address::generate(env);
     let owner = Address::generate(env);
     client.init_admin(&admin);

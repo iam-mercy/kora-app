@@ -1,15 +1,15 @@
-use crate::{ContractError, Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species};
+use crate::{ContractError, Gender, KoraContract, KoraContractClient, PrivacyLevel, Species};
 use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
 
-fn setup(env: &Env) -> (PetChainContractClient, Address) {
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+fn setup(env: &Env) -> (KoraContractClient, Address) {
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
     let admin = Address::generate(env);
     client.init_admin(&admin);
     (client, admin)
 }
 
-fn register(env: &Env, client: &PetChainContractClient, name: &str, species: &Species, breed: &str) -> u64 {
+fn register(env: &Env, client: &KoraContractClient, name: &str, species: &Species, breed: &str) -> u64 {
     let owner = Address::generate(env);
     client.register_pet(
         &owner,

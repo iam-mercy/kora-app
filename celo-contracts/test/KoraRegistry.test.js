@@ -1,7 +1,7 @@
 const { expect } = require("chai");
 const { ethers, network } = require("hardhat");
 
-describe("PetChainRegistry", function () {
+describe("KoraRegistry", function () {
   let registry;
   let admin, owner, other, vet;
 
@@ -9,7 +9,7 @@ describe("PetChainRegistry", function () {
 
   beforeEach(async function () {
     [admin, owner, other, vet] = await ethers.getSigners();
-    const Factory = await ethers.getContractFactory("PetChainRegistry");
+    const Factory = await ethers.getContractFactory("KoraRegistry");
     registry = await Factory.deploy();
 
     // Register and verify a vet
@@ -117,7 +117,7 @@ describe("PetChainRegistry", function () {
 
     it("reverts registering with an empty license number", async function () {
       await expect(registry.connect(other).registerVet("", "General Practice"))
-        .to.be.revertedWith("PetChainRegistry: empty licenseNumber");
+        .to.be.revertedWith("KoraRegistry: empty licenseNumber");
     });
 
     it("admin verifies a vet and emits VetVerified", async function () {
@@ -138,18 +138,18 @@ describe("PetChainRegistry", function () {
     it("verifyVet reverts for a revoked vet", async function () {
       await registry.connect(admin).revokeVet(vet.address);
       await expect(registry.connect(admin).verifyVet(vet.address))
-        .to.be.revertedWith("PetChainRegistry: vet is revoked");
+        .to.be.revertedWith("KoraRegistry: vet is revoked");
     });
 
     it("onlyAdmin: non-admin cannot verify", async function () {
       await registry.connect(other).registerVet("LIC-XYZ", "General Practice");
       await expect(registry.connect(other).verifyVet(other.address))
-        .to.be.revertedWith("PetChainRegistry: not admin");
+        .to.be.revertedWith("KoraRegistry: not admin");
     });
 
     it("onlyAdmin: non-admin cannot revoke", async function () {
       await expect(registry.connect(other).revokeVet(vet.address))
-        .to.be.revertedWith("PetChainRegistry: not admin");
+        .to.be.revertedWith("KoraRegistry: not admin");
     });
   });
 
@@ -173,19 +173,19 @@ describe("PetChainRegistry", function () {
     it("transferPet reverts on the zero address", async function () {
       const petId = await registerPet();
       await expect(registry.connect(owner).transferPet(petId, ethers.ZeroAddress))
-        .to.be.revertedWith("PetChainRegistry: zero address");
+        .to.be.revertedWith("KoraRegistry: zero address");
     });
 
     it("onlyPetOwner: non-owner cannot transfer", async function () {
       const petId = await registerPet();
       await expect(registry.connect(other).transferPet(petId, other.address))
-        .to.be.revertedWith("PetChainRegistry: not pet owner");
+        .to.be.revertedWith("KoraRegistry: not pet owner");
     });
 
     it("onlyPetOwner: non-owner cannot deactivate", async function () {
       const petId = await registerPet();
       await expect(registry.connect(other).deactivatePet(petId))
-        .to.be.revertedWith("PetChainRegistry: not pet owner");
+        .to.be.revertedWith("KoraRegistry: not pet owner");
     });
   });
 
@@ -204,21 +204,21 @@ describe("PetChainRegistry", function () {
     it("onlyVerifiedVet: an unregistered address cannot add a record", async function () {
       const petId = await registerPet();
       await expect(registry.connect(other).addMedicalRecord(petId, 0, "flu", "rest", ""))
-        .to.be.revertedWith("PetChainRegistry: not a verified vet");
+        .to.be.revertedWith("KoraRegistry: not a verified vet");
     });
 
     it("onlyVerifiedVet: a registered but unverified vet cannot add a record", async function () {
       const petId = await registerPet();
       await registry.connect(other).registerVet("LIC-UNVERIFIED", "General Practice");
       await expect(registry.connect(other).addMedicalRecord(petId, 0, "flu", "rest", ""))
-        .to.be.revertedWith("PetChainRegistry: not a verified vet");
+        .to.be.revertedWith("KoraRegistry: not a verified vet");
     });
 
     it("reverts adding a record for an inactive pet", async function () {
       const petId = await registerPet();
       await registry.connect(owner).deactivatePet(petId);
       await expect(registry.connect(vet).addMedicalRecord(petId, 0, "flu", "rest", ""))
-        .to.be.revertedWith("PetChainRegistry: pet inactive");
+        .to.be.revertedWith("KoraRegistry: pet inactive");
     });
   });
 
@@ -237,7 +237,7 @@ describe("PetChainRegistry", function () {
       await registry.connect(admin).revokeVet(vet.address);
       await expect(
         registry.connect(vet).addMedicalRecord(petId, 0, "flu", "rest", "")
-      ).to.be.revertedWith("PetChainRegistry: not a verified vet");
+      ).to.be.revertedWith("KoraRegistry: not a verified vet");
     });
   });
 
@@ -277,14 +277,14 @@ describe("PetChainRegistry", function () {
     it("reverts if pet is already active", async function () {
       const petId = await registerPet();
       await expect(registry.connect(owner).reactivatePet(petId))
-        .to.be.revertedWith("PetChainRegistry: already active");
+        .to.be.revertedWith("KoraRegistry: already active");
     });
 
     it("only pet owner can reactivate", async function () {
       const petId = await registerPet();
       await registry.connect(owner).deactivatePet(petId);
       await expect(registry.connect(other).reactivatePet(petId))
-        .to.be.revertedWith("PetChainRegistry: not pet owner");
+        .to.be.revertedWith("KoraRegistry: not pet owner");
     });
   });
 
@@ -412,49 +412,49 @@ describe("PetChainRegistry", function () {
     it("rejects empty name", async function () {
       await expect(
         registry.connect(owner).registerPet("", "Dog", "Mix", "2020-01-01")
-      ).to.be.revertedWith("PetChainRegistry: invalid name length");
+      ).to.be.revertedWith("KoraRegistry: invalid name length");
     });
 
     it("rejects name over 64 chars", async function () {
       await expect(
         registry.connect(owner).registerPet(long65, "Dog", "Mix", "2020-01-01")
-      ).to.be.revertedWith("PetChainRegistry: invalid name length");
+      ).to.be.revertedWith("KoraRegistry: invalid name length");
     });
 
     it("rejects empty species", async function () {
       await expect(
         registry.connect(owner).registerPet("Rex", "", "Mix", "2020-01-01")
-      ).to.be.revertedWith("PetChainRegistry: invalid species length");
+      ).to.be.revertedWith("KoraRegistry: invalid species length");
     });
 
     it("rejects species over 64 chars", async function () {
       await expect(
         registry.connect(owner).registerPet("Rex", long65, "Mix", "2020-01-01")
-      ).to.be.revertedWith("PetChainRegistry: invalid species length");
+      ).to.be.revertedWith("KoraRegistry: invalid species length");
     });
 
     it("rejects empty breed", async function () {
       await expect(
         registry.connect(owner).registerPet("Rex", "Dog", "", "2020-01-01")
-      ).to.be.revertedWith("PetChainRegistry: invalid breed length");
+      ).to.be.revertedWith("KoraRegistry: invalid breed length");
     });
 
     it("rejects breed over 64 chars", async function () {
       await expect(
         registry.connect(owner).registerPet("Rex", "Dog", long65, "2020-01-01")
-      ).to.be.revertedWith("PetChainRegistry: invalid breed length");
+      ).to.be.revertedWith("KoraRegistry: invalid breed length");
     });
 
     it("rejects empty birthday", async function () {
       await expect(
         registry.connect(owner).registerPet("Rex", "Dog", "Mix", "")
-      ).to.be.revertedWith("PetChainRegistry: invalid birthday length");
+      ).to.be.revertedWith("KoraRegistry: invalid birthday length");
     });
 
     it("rejects birthday over 64 chars", async function () {
       await expect(
         registry.connect(owner).registerPet("Rex", "Dog", "Mix", long65)
-      ).to.be.revertedWith("PetChainRegistry: invalid birthday length");
+      ).to.be.revertedWith("KoraRegistry: invalid birthday length");
     });
   });
 
@@ -485,31 +485,31 @@ describe("PetChainRegistry", function () {
     it("rejects empty diagnosis", async function () {
       await expect(
         registry.connect(vet).addMedicalRecord(petId, 0, "", "rest", "")
-      ).to.be.revertedWith("PetChainRegistry: invalid diagnosis length");
+      ).to.be.revertedWith("KoraRegistry: invalid diagnosis length");
     });
 
     it("rejects diagnosis over 1000 chars", async function () {
       await expect(
         registry.connect(vet).addMedicalRecord(petId, 0, long1001, "rest", "")
-      ).to.be.revertedWith("PetChainRegistry: invalid diagnosis length");
+      ).to.be.revertedWith("KoraRegistry: invalid diagnosis length");
     });
 
     it("rejects empty treatment", async function () {
       await expect(
         registry.connect(vet).addMedicalRecord(petId, 0, "flu", "", "")
-      ).to.be.revertedWith("PetChainRegistry: invalid treatment length");
+      ).to.be.revertedWith("KoraRegistry: invalid treatment length");
     });
 
     it("rejects treatment over 1000 chars", async function () {
       await expect(
         registry.connect(vet).addMedicalRecord(petId, 0, "flu", long1001, "")
-      ).to.be.revertedWith("PetChainRegistry: invalid treatment length");
+      ).to.be.revertedWith("KoraRegistry: invalid treatment length");
     });
 
     it("rejects notes over 1000 chars", async function () {
       await expect(
         registry.connect(vet).addMedicalRecord(petId, 0, "flu", "rest", long1001)
-      ).to.be.revertedWith("PetChainRegistry: notes too long");
+      ).to.be.revertedWith("KoraRegistry: notes too long");
     });
   });
 
@@ -519,12 +519,12 @@ describe("PetChainRegistry", function () {
   describe("#927 — case-insensitive license uniqueness", function () {
     it("rejects a different-case duplicate of an existing license from another address", async function () {
       await expect(registry.connect(other).registerVet("lic-001", "Surgery"))
-        .to.be.revertedWith("PetChainRegistry: license already registered");
+        .to.be.revertedWith("KoraRegistry: license already registered");
     });
 
     it("rejects an exact-case duplicate from another address", async function () {
       await expect(registry.connect(other).registerVet("LIC-001", "Surgery"))
-        .to.be.revertedWith("PetChainRegistry: license already registered");
+        .to.be.revertedWith("KoraRegistry: license already registered");
     });
 
     it("preserves the originally-submitted casing on the Vet struct", async function () {
@@ -653,7 +653,7 @@ describe("PetChainRegistry", function () {
         registry.connect(vet2).correctMedicalRecord(
           recordId, "Hack diag", "Hack treat", ""
         )
-      ).to.be.revertedWith("PetChainRegistry: not authorised to correct record");
+      ).to.be.revertedWith("KoraRegistry: not authorised to correct record");
     });
 
     it("reverts when called by the pet owner (not vet or admin)", async function () {
@@ -661,7 +661,7 @@ describe("PetChainRegistry", function () {
         registry.connect(owner).correctMedicalRecord(
           recordId, "Owner diag", "Owner treat", ""
         )
-      ).to.be.revertedWith("PetChainRegistry: not authorised to correct record");
+      ).to.be.revertedWith("KoraRegistry: not authorised to correct record");
     });
 
     it("reverts when called by an arbitrary address", async function () {
@@ -669,7 +669,7 @@ describe("PetChainRegistry", function () {
         registry.connect(other).correctMedicalRecord(
           recordId, "Other diag", "Other treat", ""
         )
-      ).to.be.revertedWith("PetChainRegistry: not authorised to correct record");
+      ).to.be.revertedWith("KoraRegistry: not authorised to correct record");
     });
 
     // --- input validation ---
@@ -677,7 +677,7 @@ describe("PetChainRegistry", function () {
     it("reverts on empty diagnosis", async function () {
       await expect(
         registry.connect(vet).correctMedicalRecord(recordId, "", "Treat", "")
-      ).to.be.revertedWith("PetChainRegistry: invalid diagnosis length");
+      ).to.be.revertedWith("KoraRegistry: invalid diagnosis length");
     });
 
     it("reverts on diagnosis over 1000 chars", async function () {
@@ -685,13 +685,13 @@ describe("PetChainRegistry", function () {
         registry.connect(vet).correctMedicalRecord(
           recordId, "a".repeat(1001), "Treat", ""
         )
-      ).to.be.revertedWith("PetChainRegistry: invalid diagnosis length");
+      ).to.be.revertedWith("KoraRegistry: invalid diagnosis length");
     });
 
     it("reverts on empty treatment", async function () {
       await expect(
         registry.connect(vet).correctMedicalRecord(recordId, "Diag", "", "")
-      ).to.be.revertedWith("PetChainRegistry: invalid treatment length");
+      ).to.be.revertedWith("KoraRegistry: invalid treatment length");
     });
 
     it("reverts on treatment over 1000 chars", async function () {
@@ -699,7 +699,7 @@ describe("PetChainRegistry", function () {
         registry.connect(vet).correctMedicalRecord(
           recordId, "Diag", "a".repeat(1001), ""
         )
-      ).to.be.revertedWith("PetChainRegistry: invalid treatment length");
+      ).to.be.revertedWith("KoraRegistry: invalid treatment length");
     });
 
     it("reverts on notes over 1000 chars", async function () {
@@ -707,13 +707,13 @@ describe("PetChainRegistry", function () {
         registry.connect(vet).correctMedicalRecord(
           recordId, "Diag", "Treat", "a".repeat(1001)
         )
-      ).to.be.revertedWith("PetChainRegistry: notes too long");
+      ).to.be.revertedWith("KoraRegistry: notes too long");
     });
 
     it("reverts when recordId does not exist", async function () {
       await expect(
         registry.connect(vet).correctMedicalRecord(9999, "Diag", "Treat", "")
-      ).to.be.revertedWith("PetChainRegistry: record does not exist");
+      ).to.be.revertedWith("KoraRegistry: record does not exist");
     });
   });
 
@@ -738,7 +738,7 @@ describe("PetChainRegistry", function () {
       // original admin can no longer call verifyVet
       await expect(
         registry.connect(admin).verifyVet(vet.address)
-      ).to.be.revertedWith("PetChainRegistry: not admin");
+      ).to.be.revertedWith("KoraRegistry: not admin");
     });
 
     it("new admin can exercise onlyAdmin functions", async function () {
@@ -753,13 +753,13 @@ describe("PetChainRegistry", function () {
     it("reverts when called by non-admin", async function () {
       await expect(
         registry.connect(owner).transferAdmin(other.address)
-      ).to.be.revertedWith("PetChainRegistry: not admin");
+      ).to.be.revertedWith("KoraRegistry: not admin");
     });
 
     it("reverts when newAdmin is the zero address", async function () {
       await expect(
         registry.connect(admin).transferAdmin(ethers.ZeroAddress)
-      ).to.be.revertedWith("PetChainRegistry: zero address");
+      ).to.be.revertedWith("KoraRegistry: zero address");
     });
   });
 
@@ -769,13 +769,13 @@ describe("PetChainRegistry", function () {
   describe("#928 — Pausable emergency stop", function () {
     it("only admin can pause", async function () {
       await expect(registry.connect(owner).pause())
-        .to.be.revertedWith("PetChainRegistry: not admin");
+        .to.be.revertedWith("KoraRegistry: not admin");
     });
 
     it("only admin can unpause", async function () {
       await registry.connect(admin).pause();
       await expect(registry.connect(owner).unpause())
-        .to.be.revertedWith("PetChainRegistry: not admin");
+        .to.be.revertedWith("KoraRegistry: not admin");
     });
 
     it("admin can pause and paused() reflects state", async function () {
@@ -907,19 +907,19 @@ describe("PetChainRegistry", function () {
         registry.connect(other).correctMedicalRecord(
           recordId, "hack", "hack", ""
         )
-      ).to.be.revertedWith("PetChainRegistry: not authorized");
+      ).to.be.revertedWith("KoraRegistry: not authorized");
     });
 
     it("reverts on empty diagnosis", async function () {
       await expect(
         registry.connect(vet).correctMedicalRecord(recordId, "", "treatment", "")
-      ).to.be.revertedWith("PetChainRegistry: invalid diagnosis length");
+      ).to.be.revertedWith("KoraRegistry: invalid diagnosis length");
     });
 
     it("reverts on empty treatment", async function () {
       await expect(
         registry.connect(vet).correctMedicalRecord(recordId, "diagnosis", "", "")
-      ).to.be.revertedWith("PetChainRegistry: invalid treatment length");
+      ).to.be.revertedWith("KoraRegistry: invalid treatment length");
     });
 
     it("reverts on notes over MAX_LONG_LEN", async function () {
@@ -927,7 +927,7 @@ describe("PetChainRegistry", function () {
         registry.connect(vet).correctMedicalRecord(
           recordId, "diagnosis", "treatment", "a".repeat(1001)
         )
-      ).to.be.revertedWith("PetChainRegistry: notes too long");
+      ).to.be.revertedWith("KoraRegistry: notes too long");
     });
   });
 });

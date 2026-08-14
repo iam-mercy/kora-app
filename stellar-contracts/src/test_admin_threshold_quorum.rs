@@ -1,9 +1,9 @@
-use crate::{ContractError, PetChainContract, PetChainContractClient};
+use crate::{ContractError, KoraContract, KoraContractClient};
 use soroban_sdk::{testutils::Address as _, vec, Address, Env};
 
-fn setup_multisig(env: &Env, threshold: u32) -> (PetChainContractClient, Address, Address, Address) {
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+fn setup_multisig(env: &Env, threshold: u32) -> (KoraContractClient, Address, Address, Address) {
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
 
     let admin1 = Address::generate(env);
     let admin2 = Address::generate(env);
@@ -69,8 +69,8 @@ fn threshold_change_applies_immediately_with_single_admin() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin1 = Address::generate(&env);
     let admins = vec![&env, admin1.clone()];
     client.init_multisig(&admin1, &admins, &1u32);

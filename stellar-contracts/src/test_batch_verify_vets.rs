@@ -1,14 +1,14 @@
 #![cfg(test)]
-use crate::{PetChainContract, PetChainContractClient};
+use crate::{KoraContract, KoraContractClient};
 use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
 
-fn setup_client(env: &Env) -> PetChainContractClient {
-    let contract_id = env.register_contract(None, PetChainContract);
-    PetChainContractClient::new(env, &contract_id)
+fn setup_client(env: &Env) -> KoraContractClient {
+    let contract_id = env.register_contract(None, KoraContract);
+    KoraContractClient::new(env, &contract_id)
 }
 
 fn register_test_vet(
-    client: &PetChainContractClient,
+    client: &KoraContractClient,
     env: &Env,
     vet_address: &Address,
     name: &str,

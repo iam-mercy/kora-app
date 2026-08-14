@@ -5,7 +5,7 @@
 #[cfg(test)]
 mod test_biomarker_trend {
     use crate::{
-        BiomarkerTrendCache, Gender, PetChainContract, PetChainContractClient, PrivacyLevel,
+        BiomarkerTrendCache, Gender, KoraContract, KoraContractClient, PrivacyLevel,
         Species,
     };
     use soroban_sdk::{
@@ -13,13 +13,13 @@ mod test_biomarker_trend {
         Address, Env, Map, String,
     };
 
-    fn setup() -> (Env, PetChainContractClient<'static>, Address, Address, u64) {
+    fn setup() -> (Env, KoraContractClient<'static>, Address, Address, u64) {
         let env = Env::default();
         env.mock_all_auths();
 
         let admin = Address::generate(&env);
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         client.init_admin(&admin);
 
         let owner = Address::generate(&env);
@@ -50,7 +50,7 @@ mod test_biomarker_trend {
 
     fn add_lab_result_with_biomarker(
         env: &Env,
-        client: &PetChainContractClient,
+        client: &KoraContractClient,
         pet_id: u64,
         vet: &Address,
         biomarker: &str,

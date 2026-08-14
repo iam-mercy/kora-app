@@ -1,19 +1,19 @@
 use crate::{
-    Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species, VaccineType,
+    Gender, KoraContract, KoraContractClient, PrivacyLevel, Species, VaccineType,
 };
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-fn setup() -> (Env, PetChainContractClient, Address) {
+fn setup() -> (Env, KoraContractClient, Address) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.init_admin(&admin);
     (env, client, admin)
 }
 
-fn register_pet(client: &PetChainContractClient, env: &Env, owner: &Address) -> u64 {
+fn register_pet(client: &KoraContractClient, env: &Env, owner: &Address) -> u64 {
     client.register_pet(
         owner,
         &String::from_str(env, "TestPet"),
@@ -29,7 +29,7 @@ fn register_pet(client: &PetChainContractClient, env: &Env, owner: &Address) -> 
 }
 
 fn register_and_verify_vet(
-    client: &PetChainContractClient,
+    client: &KoraContractClient,
     env: &Env,
     vet: &Address,
 ) {
@@ -43,7 +43,7 @@ fn register_and_verify_vet(
 }
 
 fn add_vaccination(
-    client: &PetChainContractClient,
+    client: &KoraContractClient,
     env: &Env,
     pet_id: u64,
     vet: &Address,

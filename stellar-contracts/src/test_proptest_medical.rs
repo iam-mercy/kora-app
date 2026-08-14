@@ -105,11 +105,11 @@ fn arb_oversized_string(limit: u32) -> impl Strategy<Value = String> {
 
 // ── Test Setup Helpers ───────────────────────────────────────────────────────
 
-fn setup_test_contract() -> (Env, PetChainContractClient<'static>, Address, Address, u64) {
+fn setup_test_contract() -> (Env, KoraContractClient<'static>, Address, Address, u64) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let owner = Address::generate(&env);

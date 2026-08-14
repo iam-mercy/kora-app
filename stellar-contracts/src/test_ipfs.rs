@@ -7,23 +7,23 @@ use soroban_sdk::{
 #[test]
 fn test_is_valid_cid_accepts_valid_v0() {
     let hash = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
-    assert!(PetChainContract::is_valid_cid(hash));
+    assert!(KoraContract::is_valid_cid(hash));
 }
 
 #[test]
 fn test_is_valid_cid_accepts_valid_v1() {
     let hash = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
-    assert!(PetChainContract::is_valid_cid(hash));
+    assert!(KoraContract::is_valid_cid(hash));
 }
 
 #[test]
 fn test_is_valid_cid_rejects_empty_string() {
-    assert!(!PetChainContract::is_valid_cid(""));
+    assert!(!KoraContract::is_valid_cid(""));
 }
 
 #[test]
 fn test_is_valid_cid_rejects_random_garbage() {
-    assert!(!PetChainContract::is_valid_cid("not-a-valid-ipfs-hash"));
+    assert!(!KoraContract::is_valid_cid("not-a-valid-ipfs-hash"));
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn test_validate_ipfs_hash_v0_success() {
     let env = Env::default();
     let valid_v0 = String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &valid_v0),
+        KoraContract::validate_ipfs_hash(&env, &valid_v0),
         Ok(())
     );
 }
@@ -45,7 +45,7 @@ fn test_validate_ipfs_hash_v1_success() {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &valid_v1),
+        KoraContract::validate_ipfs_hash(&env, &valid_v1),
         Ok(())
     );
 }
@@ -55,7 +55,7 @@ fn test_validate_ipfs_hash_too_short() {
     let env = Env::default();
     let invalid = String::from_str(&env, "QmTooShort");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -66,7 +66,7 @@ fn test_validate_ipfs_hash_v0_invalid_prefix() {
     // 46 chars but starts with Am
     let invalid = String::from_str(&env, "AmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -77,7 +77,7 @@ fn test_validate_ipfs_hash_v0_invalid_chars() {
     // 46 chars, starts with Qm, but contains '0' (invalid Base58)
     let invalid = String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbd0");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -91,7 +91,7 @@ fn test_validate_ipfs_hash_v1_invalid_chars() {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzd1",
     );
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -101,7 +101,7 @@ fn test_validate_ipfs_hash_v1_too_short() {
     let env = Env::default();
     let invalid = String::from_str(&env, "b");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -111,7 +111,7 @@ fn test_validate_ipfs_hash_v0_boundary_length() {
     let env = Env::default();
     let invalid = String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbd");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -121,7 +121,7 @@ fn test_validate_ipfs_hash_empty_string() {
     let env = Env::default();
     let invalid = String::from_str(&env, "");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -135,7 +135,7 @@ fn test_validate_ipfs_hash_too_long() {
         "baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     );
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -146,7 +146,7 @@ fn test_validate_ipfs_hash_v0_excluded_base58_char_l() {
     // 'l' (lowercase L) is excluded from Base58
     let invalid = String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdl");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -157,7 +157,7 @@ fn test_validate_ipfs_hash_v0_excluded_base58_char_O() {
     // 'O' (uppercase O) is excluded from Base58
     let invalid = String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdO");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -168,7 +168,7 @@ fn test_validate_ipfs_hash_v0_excluded_base58_char_I() {
     // 'I' (uppercase I) is excluded from Base58
     let invalid = String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdI");
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -182,7 +182,7 @@ fn test_validate_ipfs_hash_v1_invalid_char_8() {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzd8",
     );
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -196,7 +196,7 @@ fn test_validate_ipfs_hash_v1_uppercase_rejected() {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdB",
     );
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
@@ -209,7 +209,7 @@ fn test_validate_ipfs_hash_v1_max_length_valid() {
         &env,
         "baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     );
-    assert_eq!(PetChainContract::validate_ipfs_hash(&env, &hash), Ok(()));
+    assert_eq!(KoraContract::validate_ipfs_hash(&env, &hash), Ok(()));
 }
 
 #[test]
@@ -217,7 +217,7 @@ fn test_validate_ipfs_hash_v1_min_length_valid() {
     let env = Env::default();
     // 2 chars — minimum valid CIDv1 (starts with 'b', one valid body char)
     let hash = String::from_str(&env, "ba");
-    assert_eq!(PetChainContract::validate_ipfs_hash(&env, &hash), Ok(()));
+    assert_eq!(KoraContract::validate_ipfs_hash(&env, &hash), Ok(()));
 }
 
 #[test]
@@ -229,31 +229,31 @@ fn test_validate_ipfs_hash_wrong_prefix_not_qm_or_b() {
         "zafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     );
     assert_eq!(
-        PetChainContract::validate_ipfs_hash(&env, &invalid),
+        KoraContract::validate_ipfs_hash(&env, &invalid),
         Err(ContractError::InvalidIpfsHash)
     );
 }
 
 #[test]
 fn test_is_valid_cid_rejects_garbage_string() {
-    assert!(!PetChainContract::is_valid_cid("not-a-valid-ipfs-hash"));
+    assert!(!KoraContract::is_valid_cid("not-a-valid-ipfs-hash"));
 }
 
 #[test]
 fn test_is_valid_cid_rejects_empty_string() {
-    assert!(!PetChainContract::is_valid_cid(""));
+    assert!(!KoraContract::is_valid_cid(""));
 }
 
 #[test]
 fn test_is_valid_cid_accepts_valid_cidv1_bafy_prefix() {
     let hash = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
-    assert!(PetChainContract::is_valid_cid(hash));
+    assert!(KoraContract::is_valid_cid(hash));
 }
 
 #[test]
 fn test_is_valid_cid_accepts_valid_cidv0_qm_prefix() {
     let hash = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
-    assert!(PetChainContract::is_valid_cid(hash));
+    assert!(KoraContract::is_valid_cid(hash));
 }
 
 #[test]
@@ -264,11 +264,11 @@ fn test_add_pet_photo_panics_on_invalid_hash() {
     client.add_pet_photo(&pet_id, &bad_hash);
 }
 
-fn setup_pet_test_env() -> (Env, PetChainContractClient<'static>, Address, u64) {
+fn setup_pet_test_env() -> (Env, KoraContractClient<'static>, Address, u64) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     client.init_admin(&owner);
@@ -465,8 +465,8 @@ fn test_remove_pet_photo_updates_timestamp() {
 fn test_update_lost_alert() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     client.init_admin(&owner);
@@ -500,8 +500,8 @@ fn test_update_lost_alert() {
 fn test_get_pets_with_active_alerts_returns_pet_ids() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     client.init_admin(&owner);
@@ -544,8 +544,8 @@ fn test_get_pets_with_active_alerts_returns_pet_ids() {
 fn test_get_pets_with_active_alerts_excludes_resolved() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     client.init_admin(&owner);
@@ -574,8 +574,8 @@ fn test_get_pets_with_active_alerts_excludes_resolved() {
 fn test_get_pets_with_active_alerts_empty() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     client.init_admin(&owner);

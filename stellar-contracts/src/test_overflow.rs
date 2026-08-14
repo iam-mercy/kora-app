@@ -8,12 +8,12 @@
 mod test_overflow {
     use crate::{
         ActivityKey, AlertKey, BehaviorKey, ConsentKey, ContractError, DataKey, Gender,
-        InsuranceKey, MedicalKey, NutritionKey, PetChainContract, PetChainContractClient,
+        InsuranceKey, MedicalKey, NutritionKey, KoraContract, KoraContractClient,
         PrivacyLevel, Species, SystemKey, TreatmentKey,
     };
     use soroban_sdk::{testutils::Address as _, Address, Env, Error, String};
 
-    fn register_pet(client: &PetChainContractClient, env: &Env, owner: &Address) -> u64 {
+    fn register_pet(client: &KoraContractClient, env: &Env, owner: &Address) -> u64 {
         client.register_pet(
             owner,
             &String::from_str(env, "Buddy"),
@@ -28,7 +28,7 @@ mod test_overflow {
         )
     }
 
-    fn setup_verified_vet(client: &PetChainContractClient, env: &Env) -> (Address, Address) {
+    fn setup_verified_vet(client: &KoraContractClient, env: &Env) -> (Address, Address) {
         let admin = Address::generate(env);
         let vet = Address::generate(env);
         let mut admins = soroban_sdk::Vec::new(env);
@@ -65,8 +65,8 @@ mod test_overflow {
     fn test_pet_count_increments_correctly() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
 
         assert_eq!(register_pet(&client, &env, &owner), 1);
@@ -79,8 +79,8 @@ mod test_overflow {
     fn test_pet_count_overflow_returns_counter_overflow() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
 
         env.as_contract(&contract_id, || {
@@ -114,8 +114,8 @@ mod test_overflow {
     fn test_vaccination_count_overflow_returns_counter_overflow() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let (_, vet) = setup_verified_vet(&client, &env);
         let pet_id = register_pet(&client, &env, &owner);
@@ -151,8 +151,8 @@ mod test_overflow {
     fn test_cost_overflow_returns_counter_overflow() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let pet_id = register_pet(&client, &env, &owner);
 
@@ -192,8 +192,8 @@ mod test_overflow {
     fn test_medical_record_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let (_, vet) = setup_verified_vet(&client, &env);
         let pet_id = register_pet(&client, &env, &owner);
@@ -221,8 +221,8 @@ mod test_overflow {
     fn test_alert_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let pet_id = register_pet(&client, &env, &owner);
 
@@ -242,8 +242,8 @@ mod test_overflow {
     fn test_behavior_record_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let pet_id = register_pet(&client, &env, &owner);
 
@@ -268,8 +268,8 @@ mod test_overflow {
     fn test_activity_record_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let pet_id = register_pet(&client, &env, &owner);
 
@@ -296,8 +296,8 @@ mod test_overflow {
     fn test_insurance_claim_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let pet_id = register_pet(&client, &env, &owner);
 
@@ -327,8 +327,8 @@ mod test_overflow {
     fn test_treatment_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let (_, vet) = setup_verified_vet(&client, &env);
         let pet_id = register_pet(&client, &env, &owner);
@@ -357,8 +357,8 @@ mod test_overflow {
     fn test_consent_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let pet_id = register_pet(&client, &env, &owner);
         let grantee = Address::generate(&env);
@@ -379,8 +379,8 @@ mod test_overflow {
     fn test_diet_plan_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let pet_id = register_pet(&client, &env, &owner);
 
@@ -409,8 +409,8 @@ mod test_overflow {
     fn test_ownership_record_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
 
         // register_pet calls log_ownership_change which increments OwnershipRecordCount
@@ -430,8 +430,8 @@ mod test_overflow {
     fn test_transfer_proposal_count_overflow_panics() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         let owner = Address::generate(&env);
         let new_owner = Address::generate(&env);
         let pet_id = register_pet(&client, &env, &owner);

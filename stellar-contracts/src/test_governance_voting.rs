@@ -102,8 +102,8 @@ fn admin_threshold_updated_via_governance() {
     env.mock_all_auths();
     env.budget().reset_unlimited();
 
-    let contract_id = env.register(crate::PetChainContract, ());
-    let client = crate::PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register(crate::KoraContract, ());
+    let client = crate::KoraContractClient::new(&env, &contract_id);
 
     let admin1 = soroban_sdk::Address::generate(&env);
     let admin2 = soroban_sdk::Address::generate(&env);
@@ -244,8 +244,8 @@ fn quorum_met_and_threshold_met_executes() {
     env.mock_all_auths();
     env.budget().reset_unlimited();
 
-    let contract_id = env.register(crate::PetChainContract, ());
-    let client = crate::PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register(crate::KoraContract, ());
+    let client = crate::KoraContractClient::new(&env, &contract_id);
 
     let admin1 = soroban_sdk::Address::generate(&env);
     let admin2 = soroban_sdk::Address::generate(&env);
@@ -287,8 +287,8 @@ fn threshold_met_but_quorum_not_met_remains_pending() {
     env.mock_all_auths();
     env.budget().reset_unlimited();
 
-    let contract_id = env.register(crate::PetChainContract, ());
-    let client = crate::PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register(crate::KoraContract, ());
+    let client = crate::KoraContractClient::new(&env, &contract_id);
 
     let admin1 = soroban_sdk::Address::generate(&env);
     let admin2 = soroban_sdk::Address::generate(&env);

@@ -16,14 +16,14 @@ use soroban_sdk::{
 const NOW: u64 = 1_700_000_000;
 
 /// Register admin, a verified vet, and a public pet; pin the ledger to `NOW`.
-fn setup() -> (Env, PetChainContractClient<'static>, Address, Address, u64) {
+fn setup() -> (Env, KoraContractClient<'static>, Address, Address, u64) {
     let env = Env::default();
     env.mock_all_auths();
     env.budget().reset_unlimited();
     env.ledger().set_timestamp(NOW);
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let owner = Address::generate(&env);
@@ -57,7 +57,7 @@ fn setup() -> (Env, PetChainContractClient<'static>, Address, Address, u64) {
 /// Add a vaccination for `pet_id` whose entry expires at `expires_at`.
 fn add_vaccination(
     env: &Env,
-    client: &PetChainContractClient<'static>,
+    client: &KoraContractClient<'static>,
     pet_id: u64,
     vet: &Address,
     expires_at: u64,

@@ -36,7 +36,7 @@ When contributing:
 ## Encryption Key Derivation
 
 Sensitive pet and owner fields use a deterministic key derived at runtime from:
-- a fixed domain separator (`petchain:encryption-key:v1`)
+- a fixed domain separator (`kora:encryption-key:v1`)
 - the current contract address
 - admin context (legacy single admin or first multisig admin when configured)
 

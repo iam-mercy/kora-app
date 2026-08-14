@@ -8,8 +8,8 @@ use soroban_sdk::{
 fn test_age_calculation() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     env.ledger().with_mut(|l| l.timestamp = 2_000_000_000);
 
@@ -35,8 +35,8 @@ fn test_age_calculation() {
 fn test_age_edge_cases() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let (years, months) = client.get_pet_age(&9999);
     assert_eq!((years, months), (0, 0));
@@ -65,8 +65,8 @@ fn test_age_edge_cases() {
 fn test_age_calculation_from_iso_date() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     env.ledger().with_mut(|l| l.timestamp = 1_609_459_200);
 
@@ -93,8 +93,8 @@ fn test_age_calculation_from_iso_date() {
 fn test_register_pet_rejects_invalid_birthday_format() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     client.register_pet(
@@ -117,8 +117,8 @@ fn test_register_pet_rejects_invalid_birthday_format() {
 fn test_add_breed_metadata_and_calculate_lifespan() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.init_admin(&admin);
@@ -159,8 +159,8 @@ fn test_add_breed_metadata_and_calculate_lifespan() {
 fn test_unknown_breed_returns_none_lifespan() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     env.ledger().with_mut(|l| l.timestamp = 2_000_000_000);
 
@@ -188,8 +188,8 @@ fn test_unknown_breed_returns_none_lifespan() {
 fn test_update_breed_metadata() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.init_admin(&admin);
@@ -226,8 +226,8 @@ fn test_update_breed_metadata() {
 fn test_delete_breed_metadata() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.init_admin(&admin);

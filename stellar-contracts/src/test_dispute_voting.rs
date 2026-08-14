@@ -5,7 +5,7 @@ use soroban_sdk::{testutils::Address as _, Address, Env, String};
 /// opposing party (target), plus a pet and an open dispute between them.
 fn setup() -> (
     Env,
-    PetChainContractClient<'static>,
+    KoraContractClient<'static>,
     Address,
     Address,
     Address,
@@ -14,8 +14,8 @@ fn setup() -> (
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.init_admin(&admin);

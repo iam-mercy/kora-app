@@ -1,9 +1,9 @@
 use crate::{
-    Gender, InsuranceClaimStatus, PetChainContract, PetChainContractClient, PrivacyLevel, Species,
+    Gender, InsuranceClaimStatus, KoraContract, KoraContractClient, PrivacyLevel, Species,
 };
 use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
 
-fn setup_pet_with_policy(env: &Env, client: &PetChainContractClient, owner: &Address) -> u64 {
+fn setup_pet_with_policy(env: &Env, client: &KoraContractClient, owner: &Address) -> u64 {
     let pet_id = client.register_pet(
         owner,
         &String::from_str(env, "TestPet"),
@@ -36,8 +36,8 @@ fn test_appeal_rejected_claim_success() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = setup_pet_with_policy(&env, &client, &owner);
@@ -77,8 +77,8 @@ fn test_appeal_non_rejected_claim_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = setup_pet_with_policy(&env, &client, &owner);
@@ -104,8 +104,8 @@ fn test_appeal_after_14_days_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = setup_pet_with_policy(&env, &client, &owner);
@@ -137,8 +137,8 @@ fn test_appeal_within_14_days_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = setup_pet_with_policy(&env, &client, &owner);
@@ -174,8 +174,8 @@ fn test_cannot_appeal_twice() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = setup_pet_with_policy(&env, &client, &owner);
@@ -211,8 +211,8 @@ fn test_appeal_with_invalid_cid_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = setup_pet_with_policy(&env, &client, &owner);
@@ -242,8 +242,8 @@ fn test_appeal_exceeding_document_limit_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = setup_pet_with_policy(&env, &client, &owner);
@@ -279,8 +279,8 @@ fn test_review_appeal_approve() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let admin1 = Address::generate(&env);
@@ -328,8 +328,8 @@ fn test_review_appeal_reject() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let admin1 = Address::generate(&env);
@@ -377,8 +377,8 @@ fn test_review_appeal_non_appealed_claim_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let admin = Address::generate(&env);
@@ -404,8 +404,8 @@ fn test_original_reviewer_cannot_review_appeal() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let admin = Address::generate(&env);
@@ -442,8 +442,8 @@ fn test_non_admin_cannot_review_appeal() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let admin = Address::generate(&env);
@@ -479,8 +479,8 @@ fn test_appeal_with_multiple_evidence_documents() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = setup_pet_with_policy(&env, &client, &owner);
@@ -515,8 +515,8 @@ fn test_set_claim_reviewer() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let admin = Address::generate(&env);
@@ -544,8 +544,8 @@ fn test_get_claims_by_status_under_appeal() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = setup_pet_with_policy(&env, &client, &owner);

@@ -6,7 +6,7 @@ use soroban_sdk::{
 
 fn setup() -> (
     Env,
-    PetChainContractClient<'static>,
+    KoraContractClient<'static>,
     Address,
     Address,
     Address,
@@ -20,8 +20,8 @@ fn setup() -> (
     let owner = Address::generate(&env);
     let vet = Address::generate(&env);
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     client.init_admin(&admin);
 
     client.register_vet(

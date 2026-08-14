@@ -11,9 +11,9 @@ fn repeat(env: &Env, byte: u8, n: usize) -> String {
     String::from_bytes(env, &buf[..n])
 }
 
-fn setup(env: &Env) -> (PetChainContractClient, Address, Address, u64) {
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+fn setup(env: &Env) -> (KoraContractClient, Address, Address, u64) {
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
 
     let admin = Address::generate(env);
     let owner = Address::generate(env);
@@ -36,7 +36,7 @@ fn setup(env: &Env) -> (PetChainContractClient, Address, Address, u64) {
     (client, admin, owner, pet_id)
 }
 
-fn setup_with_vet(env: &Env) -> (PetChainContractClient, Address, Address, Address, u64) {
+fn setup_with_vet(env: &Env) -> (KoraContractClient, Address, Address, Address, u64) {
     let (client, admin, owner, pet_id) = setup(env);
     let vet = Address::generate(env);
     client.register_vet(
@@ -643,8 +643,8 @@ fn test_review_empty_comment_accepted() {
 fn test_vet_name_at_limit_accepted() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.init_admin(&admin);
 
@@ -663,8 +663,8 @@ fn test_vet_name_at_limit_accepted() {
 fn test_vet_name_over_limit_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.init_admin(&admin);
 
@@ -681,8 +681,8 @@ fn test_vet_name_over_limit_rejected() {
 fn test_vet_license_at_limit_accepted() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.init_admin(&admin);
 
@@ -701,8 +701,8 @@ fn test_vet_license_at_limit_accepted() {
 fn test_vet_license_over_limit_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.init_admin(&admin);
 
@@ -719,8 +719,8 @@ fn test_vet_license_over_limit_rejected() {
 fn test_vet_specialization_at_limit_accepted() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.init_admin(&admin);
 
@@ -739,8 +739,8 @@ fn test_vet_specialization_at_limit_accepted() {
 fn test_vet_specialization_over_limit_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     client.init_admin(&admin);
 

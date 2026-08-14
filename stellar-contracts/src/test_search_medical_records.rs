@@ -6,8 +6,8 @@
 mod test_search_medical_records {
     extern crate std;
     use crate::{
-        Gender, MedicalRecordFilter, PetChainContract,
-        PetChainContractClient, PrivacyLevel, Species,
+        Gender, MedicalRecordFilter, KoraContract,
+        KoraContractClient, PrivacyLevel, Species,
     };
     use soroban_sdk::{
         testutils::{Address as _, Ledger},
@@ -16,7 +16,7 @@ mod test_search_medical_records {
 
     fn setup() -> (
         Env,
-        PetChainContractClient<'static>,
+        KoraContractClient<'static>,
         Address,
         Address,
         Address,
@@ -26,8 +26,8 @@ mod test_search_medical_records {
         env.mock_all_auths();
 
         let admin = Address::generate(&env);
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         client.init_admin(&admin);
 
         let owner = Address::generate(&env);
@@ -57,7 +57,7 @@ mod test_search_medical_records {
     }
 
     fn add_record(
-        client: &PetChainContractClient,
+        client: &KoraContractClient,
         env: &Env,
         pet_id: u64,
         vet: &Address,
@@ -74,7 +74,7 @@ mod test_search_medical_records {
     }
 
     fn add_record_at(
-        client: &PetChainContractClient,
+        client: &KoraContractClient,
         env: &Env,
         pet_id: u64,
         vet: &Address,

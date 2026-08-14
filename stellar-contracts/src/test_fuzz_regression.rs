@@ -5,9 +5,9 @@
 use super::*;
 use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
 
-fn setup(env: &Env) -> (PetChainContractClient, Address, Address, u64) {
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+fn setup(env: &Env) -> (KoraContractClient, Address, Address, u64) {
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
     let admin = Address::generate(env);
     let owner = Address::generate(env);
     client.init_admin(&admin);
@@ -26,7 +26,7 @@ fn setup(env: &Env) -> (PetChainContractClient, Address, Address, u64) {
     (client, admin, owner, pet_id)
 }
 
-fn setup_with_vet(env: &Env) -> (PetChainContractClient, Address, Address, Address, u64) {
+fn setup_with_vet(env: &Env) -> (KoraContractClient, Address, Address, Address, u64) {
     let (client, admin, owner, pet_id) = setup(env);
     let vet = Address::generate(env);
     client.register_vet(

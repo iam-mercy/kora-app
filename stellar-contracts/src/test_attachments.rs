@@ -8,7 +8,7 @@ use soroban_sdk::{
 // Helper function to setup test environment
 fn setup_test_env() -> (
     Env,
-    PetChainContractClient<'static>,
+    KoraContractClient<'static>,
     Address,
     Address,
     u64,
@@ -17,8 +17,8 @@ fn setup_test_env() -> (
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     // Register owner and pet
     let owner = Address::generate(&env);
@@ -742,7 +742,7 @@ fn test_add_attachment_zero_hash_rejected() {
 
 fn setup_with_scanner() -> (
     Env,
-    PetChainContractClient<'static>,
+    KoraContractClient<'static>,
     Address, // owner
     Address, // admin
     Address, // scanner
@@ -751,8 +751,8 @@ fn setup_with_scanner() -> (
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let vet = Address::generate(&env);

@@ -282,7 +282,7 @@ pub struct PetAge {
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
-pub enum PetChainError {
+pub enum KoraError {
     NonceReused = 1,
     SelfLineage = 2,
     CircularLineage = 3,
@@ -1198,7 +1198,7 @@ pub enum ConsentKey {
 
 #[contracttype]
 pub enum CrossChainKey {
-    PetChainMapping((u64, String)),
+    KoraMapping((u64, String)),
     ChainLookup((String, String)),
 }
 
@@ -1809,7 +1809,7 @@ pub struct CustodyEntry {
     pub transfer_type: TransferType,
 }
 
-/// Result of [`PetChainContract::verify_custody_chain`].
+/// Result of [`KoraContract::verify_custody_chain`].
 ///
 /// `gap_at` identifies the index in the custody chain (0-based) where the
 /// break was found: either the first entry's `from` doesn't match the pet's
@@ -2446,10 +2446,10 @@ pub enum DisputeKey {
 }
 
 #[contract]
-pub struct PetChainContract;
+pub struct KoraContract;
 
 #[contractimpl]
-impl PetChainContract {
+impl KoraContract {
     // --- CONTRACT STATISTICS ---
 
     pub fn register_subscription(
@@ -3279,7 +3279,7 @@ impl PetChainContract {
                 break;
             }
 
-            let overdue = PetChainContract::get_overdue_vaccinations(env.clone(), pet_id);
+            let overdue = KoraContract::get_overdue_vaccinations(env.clone(), pet_id);
 
             let has_record = match &vet_address {
                 Some(vet) => Self::pet_has_vet_care_record(env.clone(), pet_id, vet.clone()),
@@ -3950,7 +3950,7 @@ impl PetChainContract {
     /// Requires quorum approval. Rejects if an active proposal exists.
     /// Validates 1 <= new_threshold <= signer_count.
     pub fn set_threshold(env: Env, proposer: Address, new_threshold: u32) {
-        PetChainContract::require_admin_auth(&env, &proposer);
+        KoraContract::require_admin_auth(&env, &proposer);
 
         let admins: Vec<Address> = env
             .storage()
@@ -4624,7 +4624,7 @@ impl PetChainContract {
         privacy_level: PrivacyLevel,
     ) -> u64 {
         owner.require_auth();
-        let birthday_ts = match PetChainContract::parse_birthday_timestamp(&birthday) {
+        let birthday_ts = match KoraContract::parse_birthday_timestamp(&birthday) {
             Ok(ts) => ts,
             Err(err) => env.panic_with_error(err),
         };
@@ -4651,7 +4651,7 @@ impl PetChainContract {
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::CounterOverflow));
         let timestamp = env.ledger().timestamp();
 
-        let key = PetChainContract::get_encryption_key(&env);
+        let key = KoraContract::get_encryption_key(&env);
 
         // Encrypt name
         let name_bytes = name.to_xdr(&env);
@@ -4740,7 +4740,7 @@ impl PetChainContract {
         env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
         env.storage().instance().set(&DataKey::PetCount, &pet_id);
 
-        PetChainContract::log_ownership_change(
+        KoraContract::log_ownership_change(
             &env,
             pet_id,
             owner.clone(),
@@ -4765,7 +4765,7 @@ impl PetChainContract {
         );
 
         // Add to species index
-        let species_key = PetChainContract::species_to_string(&env, &species);
+        let species_key = KoraContract::species_to_string(&env, &species);
         let prev_species_count: u64 = env
             .storage()
             .instance()
@@ -4826,13 +4826,13 @@ impl PetChainContract {
             .get::<DataKey, Pet>(&DataKey::Pet(id))
         {
             pet.owner.require_auth();
-            if let Err(err) = PetChainContract::parse_birthday_timestamp(&birthday) {
+            if let Err(err) = KoraContract::parse_birthday_timestamp(&birthday) {
                 env.panic_with_error(err);
             }
             Self::validate_pet_name(&env, &name);
             Self::validate_breed(&env, &species, &breed);
 
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
 
             let name_bytes = name.to_xdr(&env);
             let (name_nonce, name_ciphertext) = encrypt_sensitive_data(&env, &name_bytes, &key);
@@ -4865,7 +4865,7 @@ impl PetChainContract {
             pet.updated_at = env.ledger().timestamp();
 
             env.storage().instance().set(&DataKey::Pet(id), &pet);
-            PetChainContract::log_access(
+            KoraContract::log_access(
                 &env,
                 id,
                 pet.owner.clone(),
@@ -4919,7 +4919,7 @@ impl PetChainContract {
             let allowed = match pet.privacy_level {
                 PrivacyLevel::Public => true,
                 PrivacyLevel::Restricted => {
-                    let access = PetChainContract::check_access(env.clone(), id, caller.clone());
+                    let access = KoraContract::check_access(env.clone(), id, caller.clone());
                     !matches!(access, AccessLevel::None)
                 }
                 PrivacyLevel::Private => pet.owner == caller,
@@ -4928,7 +4928,7 @@ impl PetChainContract {
                 return None;
             }
 
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
 
             let decrypted_name = match decrypt_sensitive_data(
                 &env,
@@ -5017,7 +5017,7 @@ impl PetChainContract {
             let allowed = match pet.privacy_level {
                 PrivacyLevel::Public => true,
                 PrivacyLevel::Restricted => {
-                    let access = PetChainContract::check_access(env.clone(), id, caller.clone());
+                    let access = KoraContract::check_access(env.clone(), id, caller.clone());
                     !matches!(access, AccessLevel::None)
                 }
                 PrivacyLevel::Private => {
@@ -5030,7 +5030,7 @@ impl PetChainContract {
                 return None;
             }
 
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
 
             let decrypted_name = decrypt_sensitive_data(
                 &env,
@@ -5072,10 +5072,10 @@ impl PetChainContract {
 
     pub fn get_pet_age(env: Env, pet_id: u64) -> (u64, u64) {
         if let Some(pet) =
-            PetChainContract::get_pet(env.clone(), pet_id, env.current_contract_address())
+            KoraContract::get_pet(env.clone(), pet_id, env.current_contract_address())
         {
             let current_time = env.ledger().timestamp();
-            let birthday_timestamp = match PetChainContract::parse_birthday_timestamp(&pet.birthday)
+            let birthday_timestamp = match KoraContract::parse_birthday_timestamp(&pet.birthday)
             {
                 Ok(timestamp) => timestamp,
                 Err(_) => return (0, 0),
@@ -5105,7 +5105,7 @@ impl PetChainContract {
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
         {
             // Check if caller has access based on privacy level and access grants
-            let access_level = PetChainContract::check_access(env.clone(), pet_id, caller.clone());
+            let access_level = KoraContract::check_access(env.clone(), pet_id, caller.clone());
 
             // Private pets can only be accessed by owner
             if pet.privacy_level == PrivacyLevel::Private && pet.owner != caller {
@@ -5119,7 +5119,7 @@ impl PetChainContract {
 
             // Public pets are accessible to anyone
             // Get the base pet profile
-            let profile = PetChainContract::get_pet(env.clone(), pet_id, caller.clone())?;
+            let profile = KoraContract::get_pet(env.clone(), pet_id, caller.clone())?;
 
             // Get latest vaccination ID (most recent by administered_at)
             let vax_count: u64 = env
@@ -5135,7 +5135,7 @@ impl PetChainContract {
                     .instance()
                     .get::<MedicalKey, u64>(&MedicalKey::PetVaccinationByIndex((pet_id, i)))
                 {
-                    if let Some(vax) = PetChainContract::get_vaccinations(env.clone(), vax_id) {
+                    if let Some(vax) = KoraContract::get_vaccinations(env.clone(), vax_id) {
                         if vax.administered_at > latest_timestamp {
                             latest_timestamp = vax.administered_at;
                             latest_vaccination_id = Some(vax_id);
@@ -5145,11 +5145,11 @@ impl PetChainContract {
             }
 
             // Get active medications count
-            let active_medications = PetChainContract::get_active_medications(env.clone(), pet_id);
+            let active_medications = KoraContract::get_active_medications(env.clone(), pet_id);
             let active_medications_count = active_medications.len() as u64;
 
             // Check if insurance exists
-            let insurance = PetChainContract::get_pet_insurance(env.clone(), pet_id);
+            let insurance = KoraContract::get_pet_insurance(env.clone(), pet_id);
             let has_insurance = insurance.is_some();
 
             // Pure view: no side effects
@@ -5192,7 +5192,7 @@ impl PetChainContract {
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))?;
 
         // Check access control
-        let access_level = PetChainContract::check_access(env.clone(), pet_id, caller.clone());
+        let access_level = KoraContract::check_access(env.clone(), pet_id, caller.clone());
 
         // Private pets can only be accessed by owner
         if pet.privacy_level == PrivacyLevel::Private && pet.owner != caller {
@@ -5205,13 +5205,13 @@ impl PetChainContract {
         }
 
         // Get the base pet profile
-        let profile = PetChainContract::get_pet(env.clone(), pet_id, caller.clone())?;
+        let profile = KoraContract::get_pet(env.clone(), pet_id, caller.clone())?;
 
         // Get owner address
         let owner = pet.owner.clone();
 
         // Get active consents
-        let active_consents = PetChainContract::get_active_consents(env.clone(), pet_id);
+        let active_consents = KoraContract::get_active_consents(env.clone(), pet_id);
 
         // Get latest medical record (most recent by recorded_at)
         let record_count: u64 = env
@@ -5230,7 +5230,7 @@ impl PetChainContract {
                 .get::<MedicalKey, u64>(&MedicalKey::PetMedicalRecordIndex((pet_id, i)))
             {
                 if let Some(record) =
-                    PetChainContract::get_medical_record_raw(env.clone(), record_id)
+                    KoraContract::get_medical_record_raw(env.clone(), record_id)
                 {
                     if record.date > latest_timestamp {
                         latest_timestamp = record.date;
@@ -5276,7 +5276,7 @@ impl PetChainContract {
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))?;
 
         // Check access control
-        let access_level = PetChainContract::check_access(env.clone(), pet_id, caller.clone());
+        let access_level = KoraContract::check_access(env.clone(), pet_id, caller.clone());
 
         // Private pets can only be accessed by owner
         if pet.privacy_level == PrivacyLevel::Private && pet.owner != caller {
@@ -5305,7 +5305,7 @@ impl PetChainContract {
                 .instance()
                 .get::<MedicalKey, u64>(&MedicalKey::PetVaccinationByIndex((pet_id, i)))
             {
-                if let Some(vax) = PetChainContract::get_vaccinations(env.clone(), vax_id) {
+                if let Some(vax) = KoraContract::get_vaccinations(env.clone(), vax_id) {
                     if vax.administered_at > latest_vax_timestamp {
                         latest_vax_timestamp = vax.administered_at;
                         latest_vax_expires_at = vax.expires_at;
@@ -5331,7 +5331,7 @@ impl PetChainContract {
                 .instance()
                 .get::<MedicalKey, u64>(&MedicalKey::PetLabResultIndex((pet_id, i)))
             {
-                if let Some(lab) = PetChainContract::get_lab_result(env.clone(), lab_id) {
+                if let Some(lab) = KoraContract::get_lab_result(env.clone(), lab_id) {
                     if lab.date > latest_lab_timestamp {
                         latest_lab_timestamp = lab.date;
                         latest_lab_result_id = Some(lab_id);
@@ -5413,21 +5413,21 @@ impl PetChainContract {
             return Err(ContractError::InvalidInput);
         }
 
-        let year = PetChainContract::parse_fixed_digits(&bytes[0..4])?;
-        let month = PetChainContract::parse_fixed_digits(&bytes[5..7])?;
-        let day = PetChainContract::parse_fixed_digits(&bytes[8..10])?;
+        let year = KoraContract::parse_fixed_digits(&bytes[0..4])?;
+        let month = KoraContract::parse_fixed_digits(&bytes[5..7])?;
+        let day = KoraContract::parse_fixed_digits(&bytes[8..10])?;
 
         if !(1..=12).contains(&month) {
             return Err(ContractError::InvalidInput);
         }
 
-        let max_day = PetChainContract::days_in_month(year, month);
+        let max_day = KoraContract::days_in_month(year, month);
         if day == 0 || day > max_day {
             return Err(ContractError::InvalidInput);
         }
 
         let days_since_epoch =
-            PetChainContract::days_from_civil(year as i32, month as i32, day as i32)?;
+            KoraContract::days_from_civil(year as i32, month as i32, day as i32)?;
         Ok(days_since_epoch * 86_400)
     }
 
@@ -5453,7 +5453,7 @@ impl PetChainContract {
         match month {
             1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
             4 | 6 | 9 | 11 => 30,
-            2 if PetChainContract::is_leap_year(year) => 29,
+            2 if KoraContract::is_leap_year(year) => 29,
             2 => 28,
             _ => 0,
         }
@@ -5608,7 +5608,7 @@ impl PetChainContract {
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
         {
             pet.owner.require_auth();
-            if let Err(err) = PetChainContract::validate_ipfs_hash(&env, &photo_hash) {
+            if let Err(err) = KoraContract::validate_ipfs_hash(&env, &photo_hash) {
                 env.panic_with_error(err);
             }
 
@@ -5895,17 +5895,17 @@ impl PetChainContract {
         for pet in pets.iter() {
             let pet_id = pet.id;
             let old_owner = pet.owner.clone();
-            PetChainContract::remove_pet_from_owner_index(&env, &old_owner, pet_id);
+            KoraContract::remove_pet_from_owner_index(&env, &old_owner, pet_id);
 
             let mut pet = pet.clone();
             pet.owner = new_owner.clone();
             pet.new_owner = new_owner.clone();
             pet.updated_at = now;
 
-            PetChainContract::add_pet_to_owner_index(&env, &pet.owner, pet_id);
+            KoraContract::add_pet_to_owner_index(&env, &pet.owner, pet_id);
             env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
 
-            PetChainContract::log_ownership_change(
+            KoraContract::log_ownership_change(
                 &env,
                 pet_id,
                 old_owner.clone(),
@@ -5913,7 +5913,7 @@ impl PetChainContract {
                 String::from_str(&env, "Batch Transfer"),
             );
 
-            PetChainContract::append_custody_entry(
+            KoraContract::append_custody_entry(
                 &env,
                 pet_id,
                 old_owner.clone(),
@@ -5943,16 +5943,16 @@ impl PetChainContract {
             pet.new_owner.require_auth();
 
             let old_owner = pet.owner.clone();
-            PetChainContract::remove_pet_from_owner_index(&env, &old_owner, id);
+            KoraContract::remove_pet_from_owner_index(&env, &old_owner, id);
 
             pet.owner = pet.new_owner.clone();
             pet.updated_at = env.ledger().timestamp();
 
-            PetChainContract::add_pet_to_owner_index(&env, &pet.owner, id);
+            KoraContract::add_pet_to_owner_index(&env, &pet.owner, id);
 
             env.storage().instance().set(&DataKey::Pet(id), &pet);
 
-            PetChainContract::log_ownership_change(
+            KoraContract::log_ownership_change(
                 &env,
                 id,
                 old_owner.clone(),
@@ -5960,7 +5960,7 @@ impl PetChainContract {
                 String::from_str(&env, "Ownership Transfer"),
             );
 
-            PetChainContract::append_custody_entry(
+            KoraContract::append_custody_entry(
                 &env,
                 id,
                 old_owner.clone(),
@@ -5983,7 +5983,7 @@ impl PetChainContract {
 
     // --- HELPER FOR INDEX MAINTENANCE ---
     fn remove_pet_from_owner_index(env: &Env, owner: &Address, pet_id: u64) {
-        let count = PetChainContract::get_owner_pet_count(env, owner);
+        let count = KoraContract::get_owner_pet_count(env, owner);
         if count == 0 {
             return;
         }
@@ -6024,7 +6024,7 @@ impl PetChainContract {
     }
 
     fn add_pet_to_owner_index(env: &Env, owner: &Address, pet_id: u64) {
-        let count = PetChainContract::get_owner_pet_count(env, owner);
+        let count = KoraContract::get_owner_pet_count(env, owner);
         let new_count = safe_increment(count);
         env.storage()
             .instance()
@@ -6045,19 +6045,19 @@ impl PetChainContract {
     ) {
         owner.require_auth();
 
-        if name.len() > PetChainContract::MAX_STR_SHORT {
+        if name.len() > KoraContract::MAX_STR_SHORT {
             panic_with_error!(&env, ContractError::InputStringTooLong);
         }
 
-        if email.len() > PetChainContract::MAX_STR_SHORT {
+        if email.len() > KoraContract::MAX_STR_SHORT {
             panic_with_error!(&env, ContractError::InputStringTooLong);
         }
 
-        if emergency_contact.len() > PetChainContract::MAX_STR_SHORT {
+        if emergency_contact.len() > KoraContract::MAX_STR_SHORT {
             panic_with_error!(&env, ContractError::InputStringTooLong);
         }
 
-        let key = PetChainContract::get_encryption_key(&env);
+        let key = KoraContract::get_encryption_key(&env);
         let timestamp = env.ledger().timestamp();
 
         let name_bytes = name.to_xdr(&env);
@@ -6124,7 +6124,7 @@ impl PetChainContract {
             .instance()
             .get::<DataKey, PetOwner>(&DataKey::PetOwner(owner.clone()))
         {
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
 
             let name_bytes = name.to_xdr(&env);
             let (name_nonce, name_ciphertext) = encrypt_sensitive_data(&env, &name_bytes, &key);
@@ -6207,14 +6207,14 @@ impl PetChainContract {
     ) -> bool {
         vet_address.require_auth();
 
-        if let Err(e) = Self::validate_len("name", &name, PetChainContract::MAX_VET_NAME_LEN) {
+        if let Err(e) = Self::validate_len("name", &name, KoraContract::MAX_VET_NAME_LEN) {
             panic_with_error!(&env, e);
         }
 
         if let Err(e) = Self::validate_len(
             "license_number",
             &license_number,
-            PetChainContract::MAX_VET_LICENSE_LEN,
+            KoraContract::MAX_VET_LICENSE_LEN,
         ) {
             panic_with_error!(&env, e);
         }
@@ -6222,7 +6222,7 @@ impl PetChainContract {
         if let Err(e) = Self::validate_len(
             "specialization",
             &specialization,
-            PetChainContract::MAX_VET_SPEC_LEN,
+            KoraContract::MAX_VET_SPEC_LEN,
         ) {
             panic_with_error!(&env, e);
         }
@@ -6313,8 +6313,8 @@ impl PetChainContract {
     }
 
     pub fn verify_vet(env: Env, admin: Address, vet_address: Address) -> bool {
-        PetChainContract::require_admin_auth(&env, &admin);
-        let verified = PetChainContract::_verify_vet_internal(&env, vet_address);
+        KoraContract::require_admin_auth(&env, &admin);
+        let verified = KoraContract::_verify_vet_internal(&env, vet_address);
         if verified {
             Self::record_admin_activity(&env, &admin, "verify_vet");
         }
@@ -6327,7 +6327,7 @@ impl PetChainContract {
     /// Does not abort on individual failures - continues processing all vets
     pub fn batch_verify_vets(env: Env, admin: Address, vet_addresses: Vec<Address>) -> BatchResult {
         // Require admin authorization
-        PetChainContract::require_admin_auth(&env, &admin);
+        KoraContract::require_admin_auth(&env, &admin);
 
         // Validate batch size
         let batch_size = vet_addresses.len();
@@ -6368,7 +6368,7 @@ impl PetChainContract {
         vet_address: Address,
         specializations: Vec<Specialization>,
     ) -> bool {
-        PetChainContract::require_admin_auth(&env, &admin);
+        KoraContract::require_admin_auth(&env, &admin);
 
         let vet = env
             .storage()
@@ -6445,8 +6445,8 @@ impl PetChainContract {
     }
 
     pub fn revoke_vet_license(env: Env, admin: Address, vet_address: Address) -> bool {
-        PetChainContract::require_admin_auth(&env, &admin);
-        let revoked = PetChainContract::_revoke_vet_internal(&env, vet_address);
+        KoraContract::require_admin_auth(&env, &admin);
+        let revoked = KoraContract::_revoke_vet_internal(&env, vet_address);
         if revoked {
             Self::record_admin_activity(&env, &admin, "revoke_vet_license");
         }
@@ -6490,7 +6490,7 @@ impl PetChainContract {
             .storage()
             .instance()
             .get(&DataKey::VetLicense(license_number));
-        vet_address.and_then(|address| PetChainContract::get_vet(env, address))
+        vet_address.and_then(|address| KoraContract::get_vet(env, address))
     }
 
     /*
@@ -6528,7 +6528,7 @@ impl PetChainContract {
         batch_number: String,
     ) -> u64 {
         veterinarian.require_auth();
-        if !PetChainContract::is_verified_vet(env.clone(), veterinarian.clone()) {
+        if !KoraContract::is_verified_vet(env.clone(), veterinarian.clone()) {
             panic!("Veterinarian not verified");
         }
 
@@ -6550,7 +6550,7 @@ impl PetChainContract {
             .checked_add(1)
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::CounterOverflow));
         let now = env.ledger().timestamp();
-        let key = PetChainContract::get_encryption_key(&env);
+        let key = KoraContract::get_encryption_key(&env);
 
         let vname_bytes = vaccine_name.to_xdr(&env);
         let (vname_nonce, vname_ciphertext) = encrypt_sensitive_data(&env, &vname_bytes, &key);
@@ -6590,7 +6590,7 @@ impl PetChainContract {
             revocation_reason: None,
         };
 
-        PetChainContract::update_vet_stats(&env, &veterinarian, pet_id, 1, 1, 0);
+        KoraContract::update_vet_stats(&env, &veterinarian, pet_id, 1, 1, 0);
 
         env.storage()
             .instance()
@@ -6649,7 +6649,7 @@ impl PetChainContract {
         );
 
         // Lazy expiry check: emit VaccinationExpiringSoon for this pet's vaccinations
-        PetChainContract::check_and_emit_expiry_events(env, pet_id, 30);
+        KoraContract::check_and_emit_expiry_events(env, pet_id, 30);
 
         vaccine_id
     }
@@ -6676,7 +6676,7 @@ impl PetChainContract {
         }
 
         // Verify authorization: must be issuing vet OR admin
-        let is_admin = PetChainContract::is_admin(&env, &vet_or_admin);
+        let is_admin = KoraContract::is_admin(&env, &vet_or_admin);
         if !is_admin && vax.veterinarian != vet_or_admin {
             panic_with_error!(&env, ContractError::Unauthorized);
         }
@@ -6897,7 +6897,7 @@ impl PetChainContract {
                 .instance()
                 .get::<MedicalKey, u64>(&MedicalKey::PetLabResultIndex((pet_id, i)))
             {
-                if let Some(lab) = PetChainContract::get_lab_result(env.clone(), lab_id) {
+                if let Some(lab) = KoraContract::get_lab_result(env.clone(), lab_id) {
                     let in_range = match (from_timestamp, to_timestamp) {
                         (Some(from), Some(to)) => lab.date >= from && lab.date <= to,
                         (Some(from), None) => lab.date >= from,
@@ -6924,7 +6924,7 @@ impl PetChainContract {
             .instance()
             .get::<MedicalKey, Vaccination>(&MedicalKey::Vaccination(vaccine_id))
         {
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
 
             let name_bytes = decrypt_sensitive_data(
                 &env,
@@ -6995,7 +6995,7 @@ impl PetChainContract {
                 .instance()
                 .get::<MedicalKey, u64>(&MedicalKey::PetVaccinationByIndex((pet_id, i)))
             {
-                if let Some(vax) = PetChainContract::get_vaccinations(env.clone(), vid) {
+                if let Some(vax) = KoraContract::get_vaccinations(env.clone(), vid) {
                     history.push_back(vax);
                 }
             }
@@ -7010,7 +7010,7 @@ impl PetChainContract {
     ) -> Vec<Vaccination> {
         let current_time = env.ledger().timestamp();
         let threshold = current_time + (days_threshold * 86400);
-        let history = PetChainContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
+        let history = KoraContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
         let mut upcoming = Vec::new(&env);
 
         for vax in history.iter() {
@@ -7023,7 +7023,7 @@ impl PetChainContract {
 
     pub fn is_vaccination_current(env: Env, pet_id: u64, vaccine_type: VaccineType) -> bool {
         let current_time = env.ledger().timestamp();
-        let history = PetChainContract::get_vaccination_history(env, pet_id, 0, u32::MAX);
+        let history = KoraContract::get_vaccination_history(env, pet_id, 0, u32::MAX);
         let mut most_recent: Option<Vaccination> = None;
 
         for vax in history.iter() {
@@ -7048,7 +7048,7 @@ impl PetChainContract {
 
     pub fn get_overdue_vaccinations(env: Env, pet_id: u64) -> Vec<VaccineType> {
         let current_time = env.ledger().timestamp();
-        let history = PetChainContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
+        let history = KoraContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
         let mut overdue = Vec::new(&env);
 
         for vax in history.iter() {
@@ -7116,7 +7116,7 @@ impl PetChainContract {
         vet_address: Address,
     ) -> Vec<VaccineType> {
         let current_time = env.ledger().timestamp();
-        let history = PetChainContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
+        let history = KoraContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
         let mut overdue = Vec::new(&env);
 
         for vax in history.iter() {
@@ -7136,7 +7136,7 @@ impl PetChainContract {
     ) -> Vec<ExpiringVaccination> {
         let now = env.ledger().timestamp();
         let window_end = now.saturating_add(within_days.saturating_mul(86400));
-        let history = PetChainContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
+        let history = KoraContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
         let mut result = Vec::new(&env);
 
         for vax in history.iter() {
@@ -7166,7 +7166,7 @@ impl PetChainContract {
     fn check_and_emit_expiry_events(env: Env, pet_id: u64, within_days: u64) {
         let now = env.ledger().timestamp();
         let window_end = now.saturating_add(within_days.saturating_mul(86400));
-        let history = PetChainContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
+        let history = KoraContract::get_vaccination_history(env.clone(), pet_id, 0, u32::MAX);
 
         for vax in history.iter() {
             let exp = vax.expires_at;
@@ -7195,8 +7195,8 @@ impl PetChainContract {
     }
 
     pub fn get_vaccination_summary(env: Env, pet_id: u64) -> VaccinationSummary {
-        let overdue_types = PetChainContract::get_overdue_vaccinations(env.clone(), pet_id);
-        let upcoming = PetChainContract::get_upcoming_vaccinations(env.clone(), pet_id, 30);
+        let overdue_types = KoraContract::get_overdue_vaccinations(env.clone(), pet_id);
+        let upcoming = KoraContract::get_upcoming_vaccinations(env.clone(), pet_id, 30);
 
         VaccinationSummary {
             is_fully_current: overdue_types.is_empty(),
@@ -7443,7 +7443,7 @@ impl PetChainContract {
                 .instance()
                 .get::<NutritionKey, u64>(&NutritionKey::PetDietByIndex((pet_id, i)))
             {
-                if let Some(plan) = PetChainContract::get_diet_plan(env.clone(), did) {
+                if let Some(plan) = KoraContract::get_diet_plan(env.clone(), did) {
                     history.push_back(plan);
                 }
             }
@@ -7452,7 +7452,7 @@ impl PetChainContract {
     }
 
     pub fn get_current_diet_plan(env: Env, pet_id: u64) -> Option<DietPlan> {
-        let history = PetChainContract::get_diet_history(env, pet_id);
+        let history = KoraContract::get_diet_history(env, pet_id);
         let mut current: Option<DietPlan> = None;
         for plan in history.iter() {
             let replace = match current {
@@ -7504,7 +7504,7 @@ impl PetChainContract {
             .checked_mul(servings)
             .unwrap_or_else(|| env.panic_with_error(ContractError::CounterOverflow));
 
-        let day = PetChainContract::current_nutrition_day(&env);
+        let day = KoraContract::current_nutrition_day(&env);
         let now = env.ledger().timestamp();
 
         let mut summary = env
@@ -7575,7 +7575,7 @@ impl PetChainContract {
             return summary;
         }
 
-        let target = PetChainContract::get_current_diet_plan(env.clone(), pet_id)
+        let target = KoraContract::get_current_diet_plan(env.clone(), pet_id)
             .map(|plan| plan.daily_target_calories)
             .unwrap_or(0);
 
@@ -8069,7 +8069,7 @@ impl PetChainContract {
             panic_with_error!(&env, ContractError::PetAlreadyHasLinkedTag);
         }
 
-        let tag_id = PetChainContract::generate_tag_id(&env, pet_id, &pet.owner);
+        let tag_id = KoraContract::generate_tag_id(&env, pet_id, &pet.owner);
         let now = env.ledger().timestamp();
 
         let pet_tag = PetTag {
@@ -8122,7 +8122,7 @@ impl PetChainContract {
             if !tag.is_active {
                 return None;
             }
-            PetChainContract::get_pet(env.clone(), tag.pet_id, env.current_contract_address())
+            KoraContract::get_pet(env.clone(), tag.pet_id, env.current_contract_address())
         } else {
             None
         }
@@ -8304,7 +8304,7 @@ impl PetChainContract {
                         continue;
                     }
 
-                    if PetChainContract::medical_record_matches_filter(&env, &record, &filter) {
+                    if KoraContract::medical_record_matches_filter(&env, &record, &filter) {
                         // Apply offset: skip the first `offset` matching records.
                         if matched >= offset {
                             results.push_back(record);
@@ -8346,7 +8346,7 @@ impl PetChainContract {
         }
 
         if let Some(keyword) = &filter.diagnosis_keyword {
-            if !PetChainContract::string_contains(env, &record.diagnosis, keyword) {
+            if !KoraContract::string_contains(env, &record.diagnosis, keyword) {
                 return false;
             }
         }
@@ -8366,8 +8366,8 @@ impl PetChainContract {
             return false;
         }
 
-        let mut haystack_bytes = [0u8; PetChainContract::MAX_STR_LONG as usize];
-        let mut needle_bytes = [0u8; PetChainContract::MAX_STR_LONG as usize];
+        let mut haystack_bytes = [0u8; KoraContract::MAX_STR_LONG as usize];
+        let mut needle_bytes = [0u8; KoraContract::MAX_STR_LONG as usize];
         haystack.copy_into_slice(&mut haystack_bytes[..haystack_len]);
         needle.copy_into_slice(&mut needle_bytes[..needle_len]);
 
@@ -8506,11 +8506,11 @@ impl PetChainContract {
         Self::consume_caller_nonce(&env, &owner, nonce);
         Self::validate_pet_name(&env, &name);
         Self::validate_breed(&env, &species, &breed);
-        if let Err(err) = PetChainContract::parse_birthday_timestamp(&birthday) {
+        if let Err(err) = KoraContract::parse_birthday_timestamp(&birthday) {
             env.panic_with_error(err);
         }
         // Delegate to the core registration logic (reuse existing path)
-        PetChainContract::register_pet(
+        KoraContract::register_pet(
             env,
             owner,
             name,
@@ -8578,7 +8578,7 @@ impl PetChainContract {
         // Derive a stable, contract-scoped key from contract identity + admin context.
         // This avoids static hardcoded key material while remaining deterministic.
         let mut preimage = Bytes::new(env);
-        for byte in b"petchain:encryption-key:v1" {
+        for byte in b"kora:encryption-key:v1" {
             preimage.push_back(*byte);
         }
 
@@ -9085,10 +9085,10 @@ impl PetChainContract {
             .instance()
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
         {
-            PetChainContract::validate_emergency_contacts(&env, &contacts);
+            KoraContract::validate_emergency_contacts(&env, &contacts);
             pet.owner.require_auth();
 
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
 
             let contacts_bytes = contacts.to_xdr(&env);
             let (c_nonce, c_cipher) = encrypt_sensitive_data(&env, &contacts_bytes, &key);
@@ -9134,10 +9134,10 @@ impl PetChainContract {
             .instance()
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
         {
-            if !PetChainContract::is_emergency_authorized(&env, pet_id, &caller, &pet.owner) {
+            if !KoraContract::is_emergency_authorized(&env, pet_id, &caller, &pet.owner) {
                 panic!("Unauthorized");
             }
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
 
             let c_bytes = decrypt_sensitive_data(
                 &env,
@@ -9202,7 +9202,7 @@ impl PetChainContract {
 
             EmergencyInfo {
                 pet_id,
-                species: PetChainContract::species_to_string(&env, &pet.species),
+                species: KoraContract::species_to_string(&env, &pet.species),
                 allergies: critical_allergies,
                 critical_alerts,
                 emergency_contacts: contacts,
@@ -9293,10 +9293,10 @@ impl PetChainContract {
             .instance()
             .get::<_, Pet>(&DataKey::Pet(pet_id))
         {
-            if !PetChainContract::is_emergency_authorized(&env, pet_id, &caller, &pet.owner) {
+            if !KoraContract::is_emergency_authorized(&env, pet_id, &caller, &pet.owner) {
                 panic!("Unauthorized");
             }
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
             let c_bytes = decrypt_sensitive_data(
                 &env,
                 &pet.encrypted_emergency_contacts.ciphertext,
@@ -9324,7 +9324,7 @@ impl PetChainContract {
             .get(&DataKey::Pet(pet_id))
             .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
 
-        if !PetChainContract::is_emergency_authorized(&env, pet_id, &caller, &pet.owner) {
+        if !KoraContract::is_emergency_authorized(&env, pet_id, &caller, &pet.owner) {
             panic_with_error!(&env, ContractError::Unauthorized);
         }
 
@@ -9354,7 +9354,7 @@ impl PetChainContract {
         rate_limit.count += 1;
         env.storage().instance().set(&rate_key, &rate_limit);
 
-        let contacts = PetChainContract::get_emergency_contacts(env.clone(), pet_id, caller.clone());
+        let contacts = KoraContract::get_emergency_contacts(env.clone(), pet_id, caller.clone());
 
         env.events().publish(
             (Symbol::new(&env, "EmergencyContactsNotified"), pet_id),
@@ -9375,7 +9375,7 @@ impl PetChainContract {
             }
             owner.require_auth();
 
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
             let c_bytes = decrypt_sensitive_data(
                 &env,
                 &pet.encrypted_emergency_contacts.ciphertext,
@@ -9415,7 +9415,7 @@ impl PetChainContract {
         {
             pet.owner.require_auth();
 
-            let key = PetChainContract::get_encryption_key(&env);
+            let key = KoraContract::get_encryption_key(&env);
             let c_bytes = decrypt_sensitive_data(
                 &env,
                 &pet.encrypted_emergency_contacts.ciphertext,
@@ -9445,7 +9445,7 @@ impl PetChainContract {
                 contacts.set(index, target);
             }
 
-            PetChainContract::validate_emergency_contacts(&env, &contacts);
+            KoraContract::validate_emergency_contacts(&env, &contacts);
             let contacts_bytes = contacts.to_xdr(&env);
             let (c_nonce, c_cipher) = encrypt_sensitive_data(&env, &contacts_bytes, &key);
             pet.encrypted_emergency_contacts = EncryptedData {
@@ -10060,7 +10060,7 @@ impl PetChainContract {
         name: String,
         license_id: String,
     ) -> bool {
-        PetChainContract::require_admin_auth(&env, &admin);
+        KoraContract::require_admin_auth(&env, &admin);
 
         if env
             .storage()
@@ -10279,7 +10279,7 @@ impl PetChainContract {
         avg_lifespan_years: u32,
     ) {
         admin.require_auth();
-        if !PetChainContract::is_admin(&env, &admin) {
+        if !KoraContract::is_admin(&env, &admin) {
             env.panic_with_error(ContractError::NotAnAdmin);
         }
 
@@ -10301,7 +10301,7 @@ impl PetChainContract {
         avg_lifespan_years: u32,
     ) {
         admin.require_auth();
-        if !PetChainContract::is_admin(&env, &admin) {
+        if !KoraContract::is_admin(&env, &admin) {
             env.panic_with_error(ContractError::NotAnAdmin);
         }
 
@@ -10317,7 +10317,7 @@ impl PetChainContract {
 
     pub fn delete_breed_metadata(env: Env, admin: Address, breed_id: String) {
         admin.require_auth();
-        if !PetChainContract::is_admin(&env, &admin) {
+        if !KoraContract::is_admin(&env, &admin) {
             env.panic_with_error(ContractError::NotAnAdmin);
         }
 
@@ -10328,10 +10328,10 @@ impl PetChainContract {
 
     pub fn get_pet_age_with_lifespan(env: Env, pet_id: u64) -> PetAge {
         if let Some(pet) =
-            PetChainContract::get_pet(env.clone(), pet_id, env.current_contract_address())
+            KoraContract::get_pet(env.clone(), pet_id, env.current_contract_address())
         {
             let current_time = env.ledger().timestamp();
-            let birthday_timestamp = match PetChainContract::parse_birthday_timestamp(&pet.birthday)
+            let birthday_timestamp = match KoraContract::parse_birthday_timestamp(&pet.birthday)
             {
                 Ok(timestamp) => timestamp,
                 Err(_) => {
@@ -11876,7 +11876,7 @@ impl PetChainContract {
 
     pub fn search_by_keyword(env: Env, pet_id: u64, keyword: String) -> Vec<MedicalRecord> {
         if keyword.len() > crate::MAX_SEARCH_KEYWORD_LEN {
-            panic_with_error!(&env, PetChainError::KeywordTooLong);
+            panic_with_error!(&env, KoraError::KeywordTooLong);
         }
         let count: u64 = env.storage().instance().get::<MedicalKey, u64>(&MedicalKey::PetMedicalRecordCount(pet_id)).unwrap_or(0);
         let mut results = Vec::new(&env);
@@ -11951,7 +11951,7 @@ impl PetChainContract {
         }
         diffs
     }
-} // end impl PetChainContract
+} // end impl KoraContract
 
 // --- OVERFLOW-SAFE COUNTER HELPER ---
 pub(crate) fn safe_increment(count: u64) -> u64 {
@@ -12047,7 +12047,7 @@ fn xor_stream_crypt(env: &Env, input: &Bytes, key: &Bytes, nonce: &Bytes) -> Byt
 #[cfg(test)]
 mod test_lab_result_anomaly {
     use crate::{
-        Gender, LabResultAnomaly, PetChainContract, PetChainContractClient, PrivacyLevel, Species,
+        Gender, LabResultAnomaly, KoraContract, KoraContractClient, PrivacyLevel, Species,
         EVENT_SCHEMA_VERSION,
     };
     use soroban_sdk::{
@@ -12055,14 +12055,14 @@ mod test_lab_result_anomaly {
         Address, Env, Map, String, TryFromVal, Val,
     };
 
-    fn setup() -> (Env, PetChainContractClient<'static>, Address, Address, u64) {
+    fn setup() -> (Env, KoraContractClient<'static>, Address, Address, u64) {
         let env = Env::default();
         env.mock_all_auths();
         env.budget().reset_unlimited();
 
         let admin = Address::generate(&env);
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         client.init_admin(&admin);
 
         let owner = Address::generate(&env);
@@ -12092,7 +12092,7 @@ mod test_lab_result_anomaly {
 
     fn add_glucose(
         env: &Env,
-        client: &PetChainContractClient,
+        client: &KoraContractClient,
         pet_id: u64,
         vet: &Address,
         glucose: i128,
@@ -12113,7 +12113,7 @@ mod test_lab_result_anomaly {
         );
     }
 
-    fn seed_history(env: &Env, client: &PetChainContractClient, pet_id: u64, vet: &Address) {
+    fn seed_history(env: &Env, client: &KoraContractClient, pet_id: u64, vet: &Address) {
         // 9 readings of 100
         for i in 0..9u64 {
             add_glucose(env, client, pet_id, vet, 100, 1000 + i * 100);

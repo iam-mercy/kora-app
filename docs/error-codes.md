@@ -1,8 +1,8 @@
-# PetChain Contract Error Codes
+# Kora App Contract Error Codes
 
 ## Overview
 
-This document provides a comprehensive reference for all error codes in the PetChain Soroban smart contract, including multi-language support for error messages.
+This document provides a comprehensive reference for all error codes in the Kora App Soroban smart contract, including multi-language support for error messages.
 
 ## Multi-Language Error Registry (Issue #684)
 

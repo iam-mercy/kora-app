@@ -1,11 +1,11 @@
 use crate::*;
 use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, String};
 
-fn setup_env() -> (Env, PetChainContractClient<'static>, Address, Address, u64) {
+fn setup_env() -> (Env, KoraContractClient<'static>, Address, Address, u64) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let owner = Address::generate(&env);

@@ -1,11 +1,11 @@
 use crate::*;
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-fn setup_env() -> (Env, PetChainContractClient<'static>, Address) {
+fn setup_env() -> (Env, KoraContractClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     // Initialize admin
     let admin = Address::generate(&env);
@@ -15,7 +15,7 @@ fn setup_env() -> (Env, PetChainContractClient<'static>, Address) {
 }
 
 fn register_pet_with_species(
-    client: &PetChainContractClient,
+    client: &KoraContractClient,
     env: &Env,
     owner: &Address,
     species: Species,
@@ -34,7 +34,7 @@ fn register_pet_with_species(
     )
 }
 
-fn setup_vet(client: &PetChainContractClient, env: &Env, admin: &Address) -> Address {
+fn setup_vet(client: &KoraContractClient, env: &Env, admin: &Address) -> Address {
     let vet = Address::generate(env);
     client.register_vet(
         &vet,
@@ -255,8 +255,8 @@ fn test_snapshot_purge_continues() {
 fn test_snapshot_requires_admin_auth() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.init_admin(&admin);

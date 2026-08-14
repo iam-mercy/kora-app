@@ -10,13 +10,13 @@ use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String, Vec};
 /// A valid CIDv0 IPFS hash (46 chars, base58, `Qm` prefix).
 const VALID_IPFS_HASH: &str = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
 
-fn setup() -> (Env, PetChainContractClient<'static>, u64) {
+fn setup() -> (Env, KoraContractClient<'static>, u64) {
     let env = Env::default();
     env.mock_all_auths();
     env.budget().reset_unlimited();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let vet = Address::generate(&env);

@@ -8,10 +8,10 @@ mod test_behavior {
         env.mock_all_auths();
         env.budget().reset_unlimited();
 
-        let contract_id = env.register_contract(None, PetChainContract);
+        let contract_id = env.register_contract(None, KoraContract);
 
         let owner = Address::generate(&env);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let client = KoraContractClient::new(&env, &contract_id);
         let pet_id = client.register_pet(
             &owner,
             &String::from_str(&env, "Buddy"),
@@ -39,7 +39,7 @@ mod test_behavior {
     #[test]
     fn test_sentiment_score_computed_from_keywords() {
         let (env, contract_id, _owner, pet_id, admin) = setup();
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         client.set_behavior_keywords(
             &admin,
@@ -57,7 +57,7 @@ mod test_behavior {
     #[test]
     fn test_sentiment_trend_returns_average() {
         let (env, contract_id, _owner, pet_id, admin) = setup();
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         client.set_behavior_keywords(
             &admin,
@@ -78,7 +78,7 @@ mod test_behavior {
     #[test]
     fn test_empty_notes_score_is_zero() {
         let (env, contract_id, _owner, pet_id, admin) = setup();
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let client = KoraContractClient::new(&env, &contract_id);
 
         client.set_behavior_keywords(
             &admin,
@@ -104,8 +104,8 @@ fn setup_test_env() -> (Env, Address, Address, u64, soroban_sdk::Address) {
     let admin = Address::generate(&env);
     let owner = Address::generate(&env);
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.init_admin(&admin);
 
@@ -128,7 +128,7 @@ fn setup_test_env() -> (Env, Address, Address, u64, soroban_sdk::Address) {
 #[test]
 fn test_add_behavior_record() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let record_id = client.add_behavior_record(
         &pet_id,
@@ -151,7 +151,7 @@ fn test_add_behavior_record() {
 #[test]
 fn test_get_behavior_record_by_id() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let description = String::from_str(&env, "Learning to sit on command");
     let record_id = client.add_behavior_record(&pet_id, &BehaviorType::Training, &5, &description);
@@ -167,7 +167,7 @@ fn test_get_behavior_record_by_id() {
 #[test]
 fn test_get_behavior_record_not_found() {
     let (env, _owner, _admin, _pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let record = client.get_behavior_record(&999u64);
     assert!(record.is_none());
@@ -178,7 +178,7 @@ fn test_get_behavior_record_not_found() {
 #[test]
 fn test_get_training_milestone_count_zero_for_new_pet() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
     assert_eq!(client.get_training_milestone_count(&pet_id), 0);
     assert_eq!(client.get_training_milestone_count(&9999u64), 0);
 }
@@ -186,7 +186,7 @@ fn test_get_training_milestone_count_zero_for_new_pet() {
 #[test]
 fn test_get_training_milestone_count_increments_on_add() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     assert_eq!(client.get_training_milestone_count(&pet_id), 0);
 
@@ -217,21 +217,21 @@ fn test_get_training_milestone_count_increments_on_add() {
 #[test]
 fn test_get_behavior_count_empty() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
     assert_eq!(client.get_behavior_count(&pet_id), 0);
 }
 
 #[test]
 fn test_get_behavior_count_unknown_pet() {
     let (env, _owner, _admin, _pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
     assert_eq!(client.get_behavior_count(&9999u64), 0);
 }
 
 #[test]
 fn test_get_behavior_count_increments_on_add() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     assert_eq!(client.get_behavior_count(&pet_id), 0);
 
@@ -263,7 +263,7 @@ fn test_get_behavior_count_increments_on_add() {
 #[test]
 fn test_get_behavior_count_matches_history_length() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     for i in 0..5u32 {
         client.add_behavior_record(
@@ -282,7 +282,7 @@ fn test_get_behavior_count_matches_history_length() {
 #[test]
 fn test_get_behavior_count_isolated_per_pet() {
     let (env, owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     // Register a second pet
     let pet_id2 = client.register_pet(
@@ -319,7 +319,7 @@ fn test_get_behavior_count_isolated_per_pet() {
 #[test]
 fn test_add_multiple_behavior_records() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.add_behavior_record(
         &pet_id,
@@ -350,7 +350,7 @@ fn test_add_multiple_behavior_records() {
 #[should_panic]
 fn test_invalid_severity() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.add_behavior_record(
         &pet_id,
@@ -363,7 +363,7 @@ fn test_invalid_severity() {
 #[test]
 fn test_get_behavior_by_type() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.add_behavior_record(
         &pet_id,
@@ -396,7 +396,7 @@ fn test_get_behavior_by_type() {
 #[test]
 fn test_add_training_milestone() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let milestone_id = client.add_training_milestone(
         &pet_id,
@@ -414,7 +414,7 @@ fn test_add_training_milestone() {
 #[test]
 fn test_mark_milestone_achieved() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let milestone_id = client.add_training_milestone(
         &pet_id,
@@ -433,7 +433,7 @@ fn test_mark_milestone_achieved() {
 #[test]
 fn test_multiple_training_milestones() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.add_training_milestone(
         &pet_id,
@@ -460,7 +460,7 @@ fn test_multiple_training_milestones() {
 #[test]
 fn test_behavior_improvements_tracking() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     // Track improvement over time
     client.add_behavior_record(
@@ -496,7 +496,7 @@ fn test_behavior_improvements_tracking() {
 #[test]
 fn test_comprehensive_behavior_tracking() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     // Add various behavior records
     client.add_behavior_record(
@@ -553,7 +553,7 @@ fn test_comprehensive_behavior_tracking() {
 #[test]
 fn test_empty_behavior_history() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let history = client.get_behavior_history(&pet_id);
     assert_eq!(history.len(), 0);
@@ -562,7 +562,7 @@ fn test_empty_behavior_history() {
 #[test]
 fn test_empty_training_milestones() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let milestones = client.get_training_milestones(&pet_id, &false);
     assert_eq!(milestones.len(), 0);
@@ -571,7 +571,7 @@ fn test_empty_training_milestones() {
 #[test]
 fn test_get_training_milestones_all() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let m1 = client.add_training_milestone(
         &pet_id,
@@ -592,7 +592,7 @@ fn test_get_training_milestones_all() {
 #[test]
 fn test_get_training_milestones_achieved_only() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let m1 = client.add_training_milestone(
         &pet_id,
@@ -614,7 +614,7 @@ fn test_get_training_milestones_achieved_only() {
 #[test]
 fn test_get_training_milestones_achieved_only_empty_when_none_achieved() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.add_training_milestone(
         &pet_id,
@@ -632,7 +632,7 @@ fn test_get_training_milestones_achieved_only_empty_when_none_achieved() {
 #[test]
 fn test_improvements_filters_by_behavior_type() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.add_behavior_record(
         &pet_id,
@@ -670,7 +670,7 @@ fn test_improvements_filters_by_behavior_type() {
 #[test]
 fn test_improvements_sorted_chronologically() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     // Advance ledger time between records so timestamps differ.
     env.ledger().with_mut(|l| l.timestamp = 1000);
@@ -710,7 +710,7 @@ fn test_improvements_sorted_chronologically() {
 #[test]
 fn test_improvements_trend_severity_decreasing() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     env.ledger().with_mut(|l| l.timestamp = 100);
     client.add_behavior_record(
@@ -749,7 +749,7 @@ fn test_improvements_trend_severity_decreasing() {
 #[test]
 fn test_improvements_empty_when_no_matching_type() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.add_behavior_record(
         &pet_id,
@@ -767,7 +767,7 @@ fn test_improvements_empty_when_no_matching_type() {
 #[test]
 fn test_improvements_empty_for_pet_with_no_records() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let results = client.get_behavior_improvements(&pet_id, &BehaviorType::Training);
     assert_eq!(results.len(), 0);
@@ -777,7 +777,7 @@ fn test_improvements_empty_for_pet_with_no_records() {
 #[test]
 fn test_improvements_single_record() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.add_behavior_record(
         &pet_id,
@@ -798,7 +798,7 @@ fn test_improvements_single_record() {
 #[test]
 fn test_all_behavior_types() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     client.add_behavior_record(
         &pet_id,
@@ -842,7 +842,7 @@ fn test_all_behavior_types() {
 #[test]
 fn test_get_breeding_record_valid() {
     let (env, owner, _admin, sire_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let dam_id = client.register_pet(
         &owner,
@@ -878,7 +878,7 @@ fn test_get_breeding_record_valid() {
 #[test]
 fn test_get_breeding_record_nonexistent() {
     let (env, _owner, _admin, _pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let record = client.get_breeding_record(&999);
     assert!(!record.is_some());
@@ -889,7 +889,7 @@ fn test_get_breeding_record_nonexistent() {
 #[test]
 fn test_get_breeding_count_zero_when_no_records() {
     let (env, _owner, _admin, pet_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let count = client.get_breeding_count(&pet_id);
     assert_eq!(count, 0);
@@ -898,7 +898,7 @@ fn test_get_breeding_count_zero_when_no_records() {
 #[test]
 fn test_get_breeding_count_increments_for_sire() {
     let (env, owner, _admin, sire_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let dam_id = client.register_pet(
         &owner,
@@ -926,7 +926,7 @@ fn test_get_breeding_count_increments_for_sire() {
 #[test]
 fn test_get_breeding_count_increments_for_dam() {
     let (env, owner, _admin, sire_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let dam_id = client.register_pet(
         &owner,
@@ -954,7 +954,7 @@ fn test_get_breeding_count_increments_for_dam() {
 #[test]
 fn test_get_breeding_count_multiple_records() {
     let (env, owner, _admin, sire_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let dam_id = client.register_pet(
         &owner,
@@ -995,7 +995,7 @@ fn test_get_breeding_count_multiple_records() {
 #[test]
 fn test_get_breeding_count_unrelated_pet_unaffected() {
     let (env, owner, _admin, sire_id, contract_id) = setup_test_env();
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let dam_id = client.register_pet(
         &owner,

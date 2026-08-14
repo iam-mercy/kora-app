@@ -4,10 +4,10 @@ const hre = require("hardhat");
 async function main() {
   const contractAddress = process.env.CONTRACT_ADDRESS;
   if (!contractAddress) {
-    throw new Error("Set CONTRACT_ADDRESS to the deployed PetChainRegistry address");
+    throw new Error("Set CONTRACT_ADDRESS to the deployed KoraRegistry address");
   }
 
-  const registry = await hre.ethers.getContractAt("PetChainRegistry", contractAddress);
+  const registry = await hre.ethers.getContractAt("KoraRegistry", contractAddress);
 
   const tx = await registry.registerPet("Rex", "Dog", "Labrador", "2020-01-01");
   const receipt = await tx.wait();

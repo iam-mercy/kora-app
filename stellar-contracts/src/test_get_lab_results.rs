@@ -4,19 +4,19 @@
 
 #[cfg(test)]
 mod test_get_lab_results {
-    use crate::{Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species};
+    use crate::{Gender, KoraContract, KoraContractClient, PrivacyLevel, Species};
     use soroban_sdk::{
         testutils::{Address as _, Ledger as _},
         Address, Env, Map, String, Vec,
     };
 
-    fn setup() -> (Env, PetChainContractClient<'static>, Address, Address, u64) {
+    fn setup() -> (Env, KoraContractClient<'static>, Address, Address, u64) {
         let env = Env::default();
         env.mock_all_auths();
 
         let admin = Address::generate(&env);
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         client.init_admin(&admin);
 
         let owner = Address::generate(&env);
@@ -46,7 +46,7 @@ mod test_get_lab_results {
     }
 
     fn add_lab_result(
-        client: &PetChainContractClient,
+        client: &KoraContractClient,
         env: &Env,
         pet_id: u64,
         vet: &Address,
@@ -231,7 +231,7 @@ mod test_get_lab_results {
     // REFERENCE RANGE VALIDATION TESTS (Issue #652)
     // ============================================================
 
-    fn setup_with_admin() -> (Env, PetChainContractClient<'static>, Address, Address, u64, Address) {
+    fn setup_with_admin() -> (Env, KoraContractClient<'static>, Address, Address, u64, Address) {
         let (env, client, owner, vet, pet_id) = setup();
         let admin = Address::generate(&env);
         (env, client, owner, vet, pet_id, admin)

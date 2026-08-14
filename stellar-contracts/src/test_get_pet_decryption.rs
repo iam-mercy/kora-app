@@ -17,23 +17,23 @@
 #[cfg(test)]
 mod test_get_pet_decryption {
     use crate::{
-        AccessLevel, DataKey, EncryptedData, Gender, Pet, PetChainContract, PetChainContractClient,
+        AccessLevel, DataKey, EncryptedData, Gender, Pet, KoraContract, KoraContractClient,
         PrivacyLevel, Species,
     };
     use soroban_sdk::{testutils::Address as _, Address, Bytes, Env, String, Vec};
 
     // ---- helpers ----
 
-    fn setup() -> (Env, PetChainContractClient<'static>, soroban_sdk::Address) {
+    fn setup() -> (Env, KoraContractClient<'static>, soroban_sdk::Address) {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         (env, client, contract_id)
     }
 
     fn register_pet(
-        client: &PetChainContractClient,
+        client: &KoraContractClient,
         env: &Env,
         owner: &Address,
         privacy: PrivacyLevel,
@@ -52,7 +52,7 @@ mod test_get_pet_decryption {
         )
     }
 
-    fn setup_verified_vet(client: &PetChainContractClient, env: &Env) -> Address {
+    fn setup_verified_vet(client: &KoraContractClient, env: &Env) -> Address {
         let admin = Address::generate(env);
         let vet = Address::generate(env);
         let mut admins = soroban_sdk::Vec::new(env);

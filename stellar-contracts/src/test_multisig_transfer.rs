@@ -1,10 +1,10 @@
-use crate::{Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species};
+use crate::{Gender, KoraContract, KoraContractClient, PrivacyLevel, Species};
 use soroban_sdk::{testutils::{Address as _, Events}, Address, Env, String, Vec};
 
 fn setup_test_env<'a>(
     env: &'a Env,
 ) -> (
-    PetChainContractClient<'a>,
+    KoraContractClient<'a>,
     Address,
     Address,
     Address,
@@ -12,8 +12,8 @@ fn setup_test_env<'a>(
 ) {
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
 
     let owner = Address::generate(env);
     let signer1 = Address::generate(env);
@@ -25,7 +25,7 @@ fn setup_test_env<'a>(
     (client, owner, signer1, signer2, new_owner)
 }
 
-fn register_test_pet(client: &PetChainContractClient, env: &Env, owner: &Address) -> u64 {
+fn register_test_pet(client: &KoraContractClient, env: &Env, owner: &Address) -> u64 {
     client.register_pet(
         owner,
         &String::from_str(env, "TestPet"),
@@ -797,8 +797,8 @@ fn test_get_active_transfer_proposals_per_pet_isolation() {
 fn test_set_threshold_valid() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin1 = Address::generate(&env);
     let admin2 = Address::generate(&env);
     let mut admins = Vec::new(&env);
@@ -815,8 +815,8 @@ fn test_set_threshold_valid() {
 fn test_set_threshold_zero_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin1 = Address::generate(&env);
     let mut admins = Vec::new(&env);
     admins.push_back(admin1.clone());
@@ -829,8 +829,8 @@ fn test_set_threshold_zero_rejected() {
 fn test_set_threshold_exceeds_signer_count_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin1 = Address::generate(&env);
     let mut admins = Vec::new(&env);
     admins.push_back(admin1.clone());
@@ -843,8 +843,8 @@ fn test_set_threshold_exceeds_signer_count_rejected() {
 fn test_set_threshold_blocked_by_active_proposal() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let admin1 = Address::generate(&env);
     let admin2 = Address::generate(&env);
     let mut admins = Vec::new(&env);

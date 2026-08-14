@@ -18,8 +18,8 @@ fn valid_contacts(env: &Env) -> Vec<EmergencyContact> {
 fn test_owner_can_read_emergency_info() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = client.register_pet(
@@ -67,8 +67,8 @@ fn test_owner_can_read_emergency_info() {
 fn test_approved_responder_can_read_emergency_info() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let responder = Address::generate(&env);
@@ -115,8 +115,8 @@ fn test_approved_responder_can_read_emergency_info() {
 fn test_unauthorized_address_cannot_read_emergency_info() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let stranger = Address::generate(&env);
@@ -150,8 +150,8 @@ fn test_unauthorized_address_cannot_read_emergency_info() {
 fn test_revoked_responder_cannot_read_emergency_info() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let responder = Address::generate(&env);
@@ -187,8 +187,8 @@ fn test_revoked_responder_cannot_read_emergency_info() {
 fn test_emergency_data_filtering() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let contacts = valid_contacts(&env);
@@ -240,8 +240,8 @@ fn test_emergency_data_filtering() {
 fn test_emergency_override_writes_audit_entry() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let responder = Address::generate(&env);
@@ -278,8 +278,8 @@ fn test_emergency_override_writes_audit_entry() {
 fn test_emergency_audit_pagination_and_cap() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let responder = Address::generate(&env);
@@ -319,8 +319,8 @@ fn test_emergency_audit_pagination_and_cap() {
 fn test_admin_can_view_any_emergency_audit() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.init_admin(&admin);
@@ -354,8 +354,8 @@ fn test_admin_can_view_any_emergency_audit() {
 fn test_unauthorized_emergency_audit_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let stranger = Address::generate(&env);
@@ -379,8 +379,8 @@ fn test_unauthorized_emergency_audit_rejected() {
 fn test_owner_can_retrieve_emergency_access_logs() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = client.register_pet(
@@ -427,8 +427,8 @@ fn test_owner_can_retrieve_emergency_access_logs() {
 fn test_non_owner_cannot_retrieve_emergency_access_logs() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let stranger = Address::generate(&env);
@@ -461,8 +461,8 @@ fn test_non_owner_cannot_retrieve_emergency_access_logs() {
 fn test_responder_cannot_retrieve_emergency_access_logs() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let responder = Address::generate(&env);
@@ -511,8 +511,8 @@ fn test_responder_cannot_retrieve_emergency_access_logs() {
 fn test_get_emergency_access_logs_nonexistent_pet() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let nonexistent_pet_id = 99999u64;
@@ -525,8 +525,8 @@ fn test_get_emergency_access_logs_nonexistent_pet() {
 fn test_emergency_access_logs_contain_correct_data() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let pet_id = client.register_pet(
@@ -578,8 +578,8 @@ fn test_emergency_access_logs_contain_correct_data() {
 fn test_add_emergency_responder_writes_access_log() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let responder = Address::generate(&env);
@@ -623,8 +623,8 @@ fn test_add_emergency_responder_writes_access_log() {
 fn test_remove_emergency_responder_writes_access_log() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let responder = Address::generate(&env);
@@ -671,8 +671,8 @@ fn test_remove_emergency_responder_writes_access_log() {
 fn test_admin_can_read_emergency_access_audit_log() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     client.init_admin(&admin);
@@ -711,8 +711,8 @@ fn test_admin_can_read_emergency_access_audit_log() {
 fn test_stranger_cannot_read_emergency_access_audit_log() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let stranger = Address::generate(&env);

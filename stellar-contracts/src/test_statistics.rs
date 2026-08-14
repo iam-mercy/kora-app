@@ -1,11 +1,11 @@
 use crate::*;
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-fn setup_env() -> (Env, PetChainContractClient<'static>, Address) {
+fn setup_env() -> (Env, KoraContractClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     // Initialize admin
     let admin = Address::generate(&env);
@@ -15,7 +15,7 @@ fn setup_env() -> (Env, PetChainContractClient<'static>, Address) {
 }
 
 fn register_pet_with_species(
-    client: &PetChainContractClient,
+    client: &KoraContractClient,
     env: &Env,
     owner: &Address,
     species: Species,
@@ -110,8 +110,8 @@ fn test_get_active_pets_count() {
 fn test_activate_pet_requires_owner_auth() {
     let env = Env::default();
     env.mock_all_auths(); // Mock auth for registration
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
     let _non_owner = Address::generate(&env);
@@ -317,7 +317,7 @@ fn test_vet_stats_multiple_pets() {
 // ── Vet Review Tests ──────────────────────────────────────────────────────────
 
 fn setup_vet_and_pet(
-    client: &PetChainContractClient,
+    client: &KoraContractClient,
     env: &Env,
     admin: &Address,
 ) -> (Address, Address, u64) {

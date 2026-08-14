@@ -3,7 +3,7 @@
 ## Repository Layout
 
 ```text
-PetChain-Contracts/
+Kora-App-Contracts/
 ├── README.md
 ├── SECURITY.md
 ├── CONTRIBUTING.md
@@ -24,14 +24,14 @@ PetChain-Contracts/
     ├── package.json
     ├── hardhat.config.js
     └── contracts/
-        └── PetChainRegistry.sol
+        └── KoraRegistry.sol
 ```
 
 ## Components
 
 ### `stellar-contracts`
 
-The main Soroban contract crate. It contains the primary PetChain smart contract, including:
+The main Soroban contract crate. It contains the primary Kora App smart contract, including:
 
 - pet registration and ownership
 - veterinary access control
@@ -44,7 +44,7 @@ The nested `contracts/pet-transfer-adoption` package is a smaller ownership-tran
 
 ### `celo-contracts`
 
-A parallel Solidity implementation (`PetChainRegistry.sol`) targeting the Celo network via Hardhat:
+A parallel Solidity implementation (`KoraRegistry.sol`) targeting the Celo network via Hardhat:
 
 - vet, pet, and medical record registry
 - pausable emergency-stop

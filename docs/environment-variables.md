@@ -1,7 +1,7 @@
 # Environment Variables Reference — backend-2fa
 
 Single authoritative list of every environment variable that affects the
-`petchain-2fa` service at runtime. Variables are grouped by subsystem.
+`kora-2fa` service at runtime. Variables are grouped by subsystem.
 
 ## Database
 
@@ -42,7 +42,7 @@ Single authoritative list of every environment variable that affects the
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `RUST_LOG` | no | — | Standard `tracing-subscriber` / `env_filter` directive (e.g. `info`, `petchain_2fa=debug`). Controls log verbosity. |
+| `RUST_LOG` | no | — | Standard `tracing-subscriber` / `env_filter` directive (e.g. `info`, `kora_2fa=debug`). Controls log verbosity. |
 
 ## Build-time
 

@@ -1,7 +1,7 @@
 {
   "name": "celo-contracts",
   "version": "1.0.0",
-  "description": "PetChainRegistry Solidity contract for the Celo network",
+  "description": "KoraRegistry Solidity contract for the Celo network",
   "private": true,
   "scripts": {
     "compile": "hardhat compile",

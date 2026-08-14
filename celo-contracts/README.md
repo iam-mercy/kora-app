@@ -1,6 +1,6 @@
 # celo-contracts
 
-`PetChainRegistry` is the Solidity contract that backs PetChain on the Celo network.
+`KoraRegistry` is the Solidity contract that backs Kora App on the Celo network.
 
 ## Setup
 
@@ -34,7 +34,7 @@ npx hardhat test
 
 ### `scripts/deploy.js`
 
-Deploys `PetChainRegistry` and prints its address.
+Deploys `KoraRegistry` and prints its address.
 
 ```bash
 # Local network (no env vars needed)
@@ -49,7 +49,7 @@ npx hardhat run scripts/deploy.js --network celo
 
 ### `scripts/register-pet.js`
 
-Registers a sample pet against an already-deployed `PetChainRegistry`. Requires
+Registers a sample pet against an already-deployed `KoraRegistry`. Requires
 `CONTRACT_ADDRESS` to be set to the address printed by `deploy.js`.
 
 ```bash

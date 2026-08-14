@@ -1,6 +1,6 @@
-# Contributing to PetChain Smart Contracts
+# Contributing to Kora App Smart Contracts
 
-Thank you for your interest in contributing to PetChain! This guide will help you get started.
+Thank you for your interest in contributing to Kora App! This guide will help you get started.
 
 ## Development Setup
 
@@ -10,8 +10,8 @@ Thank you for your interest in contributing to PetChain! This guide will help yo
 
 ### Setup
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/PetChain-Contracts.git`
-3. Navigate to project: `cd PetChain-Contracts`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/Kora-App-Contracts.git`
+3. Navigate to project: `cd Kora-App-Contracts`
 4. Build contracts: `cd stellar-contracts && cargo build --target wasm32-unknown-unknown --release`
 5. Run tests: `cargo test`
 
@@ -116,4 +116,4 @@ Look for issues labeled `good-first-issue`:
 - Focus on constructive feedback
 - Follow GitHub's community guidelines
 
-Thank you for contributing to PetChain!
+Thank you for contributing to Kora App!

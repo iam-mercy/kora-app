@@ -1,11 +1,11 @@
 use crate::*;
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-fn setup_env() -> (Env, PetChainContractClient<'static>, Address, Address) {
+fn setup_env() -> (Env, KoraContractClient<'static>, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let owner = Address::generate(&env);
@@ -15,7 +15,7 @@ fn setup_env() -> (Env, PetChainContractClient<'static>, Address, Address) {
 }
 
 fn register_test_pet(
-    client: &PetChainContractClient,
+    client: &KoraContractClient,
     env: &Env,
     owner: &Address,
 ) -> u64 {
@@ -34,7 +34,7 @@ fn register_test_pet(
 }
 
 fn register_vet(
-    client: &PetChainContractClient,
+    client: &KoraContractClient,
     env: &Env,
     admin: &Address,
 ) -> Address {

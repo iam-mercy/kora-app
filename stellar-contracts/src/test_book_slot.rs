@@ -1,17 +1,17 @@
 #[cfg(test)]
 mod test_book_slot {
-    use crate::{PetChainContract, PetChainContractClient};
+    use crate::{KoraContract, KoraContractClient};
     use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-    fn setup_env() -> (Env, PetChainContractClient<'static>) {
+    fn setup_env() -> (Env, KoraContractClient<'static>) {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register_contract(None, PetChainContract);
-        let client = PetChainContractClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
         (env, client)
     }
 
-    fn setup_verified_vet(env: &Env, client: &PetChainContractClient) -> Address {
+    fn setup_verified_vet(env: &Env, client: &KoraContractClient) -> Address {
         let admin = Address::generate(env);
         let vet = Address::generate(env);
 
@@ -29,7 +29,7 @@ mod test_book_slot {
         vet
     }
 
-    fn add_slot(env: &Env, client: &PetChainContractClient, vet: &Address) -> u64 {
+    fn add_slot(env: &Env, client: &KoraContractClient, vet: &Address) -> u64 {
         let now = env.ledger().timestamp();
         client.set_availability(vet, &now, &(now + 3600))
     }

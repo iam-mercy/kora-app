@@ -1,15 +1,15 @@
-use crate::{Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species};
+use crate::{Gender, KoraContract, KoraContractClient, PrivacyLevel, Species};
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-fn setup(env: &Env) -> (PetChainContractClient, Address) {
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(env, &contract_id);
+fn setup(env: &Env) -> (KoraContractClient, Address) {
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(env, &contract_id);
     let admin = Address::generate(env);
     client.init_admin(&admin);
     (client, admin)
 }
 
-fn do_register(env: &Env, client: &PetChainContractClient, owner: &Address, nonce: u64) -> u64 {
+fn do_register(env: &Env, client: &KoraContractClient, owner: &Address, nonce: u64) -> u64 {
     client.register_pet_with_nonce(
         owner,
         &nonce,

@@ -1,7 +1,7 @@
-use crate::{Gender, PetChainContract, PetChainContractClient, PrivacyLevel, Species};
+use crate::{Gender, KoraContract, KoraContractClient, PrivacyLevel, Species};
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-fn register_pet(env: &Env, client: &PetChainContractClient, owner: &Address, name: &str) -> u64 {
+fn register_pet(env: &Env, client: &KoraContractClient, owner: &Address, name: &str) -> u64 {
     client.register_pet(
         owner,
         &String::from_str(env, name),
@@ -18,7 +18,7 @@ fn register_pet(env: &Env, client: &PetChainContractClient, owner: &Address, nam
 
 fn setup() -> (
     Env,
-    PetChainContractClient<'static>,
+    KoraContractClient<'static>,
     Address,
     u64,
     u64,
@@ -27,8 +27,8 @@ fn setup() -> (
 ) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let sire = register_pet(&env, &client, &owner, "Sire");
     let dam = register_pet(&env, &client, &owner, "Dam");
@@ -42,8 +42,8 @@ fn setup() -> (
 fn test_self_reference_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, PetChainContract);
-    let client = PetChainContractClient::new(&env, &contract_id);
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let sire = register_pet(&env, &client, &owner, "Sire");
     let dam = register_pet(&env, &client, &owner, "Dam");

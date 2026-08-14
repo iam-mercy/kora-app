@@ -1,4 +1,4 @@
-//! Fee escrow for the PetChain pet transfer/adoption contract.
+//! Fee escrow for the Kora App pet transfer/adoption contract.
 //!
 //! Flow:
 //!   1. Buyer calls `deposit_fee()` — XLM (in stroops) held in contract storage

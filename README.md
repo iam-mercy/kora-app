@@ -1,12 +1,12 @@
-# PetChain Contracts
+# Kora App Contracts
 
-Smart contracts for PetChain's on-chain pet registry: ownership, veterinary access,
+Smart contracts for Kora App's on-chain pet registry: ownership, veterinary access,
 medical records, and adoption/transfer flows.
 
 ## Repository Layout
 
 ```text
-PetChain-Contracts/
+Kora-App-Contracts/
 ├── stellar-contracts/       # Soroban smart contract crate
 │   ├── src/lib.rs           # Main contract
 │   ├── src/test_*.rs        # Test modules
@@ -14,7 +14,7 @@ PetChain-Contracts/
 │       └── pet-transfer-adoption/
 ├── celo-contracts/          # Solidity registry (Hardhat, Celo network)
 │   └── contracts/
-│       └── PetChainRegistry.sol
+│       └── KoraRegistry.sol
 └── docs/
     ├── architecture.md
     ├── development.md
