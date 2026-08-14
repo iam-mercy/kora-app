@@ -2,6 +2,7 @@
 name = "kora-stellar"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/iam-mercy/kora-app"
 
 [lib]
 crate-type = ["cdylib"]

@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "KoraRegistry Solidity contract for the Celo network",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iam-mercy/kora-app.git",
+    "directory": "celo-contracts"
+  },
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
