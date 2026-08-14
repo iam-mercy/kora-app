@@ -1,6 +1,7 @@
 # PetChain Contracts
 
-Rust code for PetChain's on-chain contracts and backend authentication work.
+Smart contracts for PetChain's on-chain pet registry: ownership, veterinary access,
+medical records, and adoption/transfer flows.
 
 ## Repository Layout
 
@@ -11,18 +12,13 @@ PetChain-Contracts/
 │   ├── src/test_*.rs        # Test modules
 │   └── contracts/
 │       └── pet-transfer-adoption/
-├── backend-2fa/             # TOTP 2FA support crate
-│   ├── src/
-│   ├── migrations/
-│   ├── schema.sql
-│   ├── README.md
-│   └── examples/
-│       └── example_integration.rs
+├── celo-contracts/          # Solidity registry (Hardhat, Celo network)
+│   └── contracts/
+│       └── PetChainRegistry.sol
 └── docs/
     ├── architecture.md
     ├── development.md
     ├── api.md
-    ├── openapi.yaml
     └── error-codes.md
 ```
 
@@ -35,11 +31,12 @@ cd stellar-contracts
 cargo test
 ```
 
-### Backend 2FA
+### Celo contracts
 
 ```bash
-cd backend-2fa
-cargo test
+cd celo-contracts
+npm install
+npx hardhat compile
 ```
 
 ## Documentation

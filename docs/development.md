@@ -22,47 +22,14 @@ Budget measurements are taken in unit tests with `env.cost_estimate().budget()` 
 ### Regression Bounds
 
 `gas_profile_tests` in `stellar-contracts/src/lib.rs` asserts that optimized instruction and memory costs remain under the documented optimized bounds for `get_behavior_by_type`, `get_activity_stats`, and `get_consent_history_page`.
+
 # Development
 
 ## Prerequisites
 
 - Rust toolchain
 - Stellar CLI for contract work
-- PostgreSQL if you want to exercise the backend database store
-- Redis only for the optional Redis rate-limiter tests
-
-## Performance Benchmarks — backend-2fa
-
-Run with:
-
-```bash
-cd backend-2fa
-cargo bench
-```
-
-### Baseline numbers (measured on Azure Linux, 2 vCPU, 2026-06-28)
-
-#### `totp_verification`
-
-| Benchmark | ns/iter |
-|---|---:|
-| `generate_secret` | ~45,000 |
-| `setup` | ~480,000 |
-| `verify_token_invalid` | ~350,000 |
-| `generate_backup_codes_10` | ~12,000 |
-| `verify_backup_code` | ~500 |
-
-#### `rate_limiter`
-
-| Benchmark | ns/iter |
-|---|---:|
-| `record_failure_single_key` | ~800 |
-| `record_failure_rotating_keys` | ~1,200 |
-| `concurrent_record_failure/2` | ~250,000 |
-| `concurrent_record_failure/4` | ~480,000 |
-| `concurrent_record_failure/8` | ~950,000 |
-
-These baselines were established with `criterion = "=0.5.1"`. A regression of more than 2× on any individual benchmark warrants investigation before merging.
+- Node.js + npm for `celo-contracts` (Hardhat)
 
 ## Common Commands
 
@@ -74,35 +41,16 @@ cargo fmt
 cargo test
 ```
 
-### Backend 2FA crate
+### Celo contracts
 
 ```bash
-cd backend-2fa
-cargo fmt
-cargo test
+cd celo-contracts
+npx hardhat test
 ```
-
-## OpenAPI Spec Validation
-
-The backend-2fa CI validates that the OpenAPI specification stays in sync with the actual implementation:
-
-1. **Spectral linting** (`.github/workflows/backend-2fa.yml`): Validates OpenAPI 3.0 structural correctness and enforces the `spectral:oas` ruleset.
-
-2. **Endpoint validation** (`backend-2fa/tests/openapi_validation.rs`): An integration test that:
-   - Parses `docs/openapi.yaml`
-   - Verifies all documented paths have corresponding implementations
-   - Ensures critical endpoints (e.g., `/2fa/enable`, `/2fa/verify`) are documented
-
-If you add or rename an endpoint:
-1. Update `docs/openapi.yaml` with the new path and methods
-2. Update the `implemented_endpoints` set in `openapi_validation.rs` 
-3. Run `cargo test --test openapi_validation` to validate the spec stays in sync
 
 ## Notes
 
-- The backend test suite skips Redis integration tests unless `REDIS_URL` is set.
-- The repo contains two independent Rust crates, so build and test them separately.
-- Use `.env.example` as the starting point for local environment variables.
+- The repo contains a Rust Soroban crate and a separate Hardhat/Solidity project; build and test them separately.
 
 ## Wasm Size Audit
 

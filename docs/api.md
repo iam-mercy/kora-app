@@ -1,41 +1,4 @@
-ckend 2FA — OpenAPI Specification
-
-The Backend 2FA service is fully documented as an **OpenAPI 3.0** spec.
-
-- **Machine-readable spec:** [`docs/openapi.yaml`](./openapi.yaml)
-- **Validation:** The spec is validated automatically on every PR via the
-  `backend-2fa.yml` CI workflow using `@stoplight/spectral-cli`.
-
-### Endpoints at a glance
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/2fa/enable` | Enable 2FA — returns secret and backup codes |
-| `POST` | `/2fa/disable` | Disable 2FA (requires current TOTP token) |
-| `POST` | `/2fa/verify` | Verify a TOTP token |
-| `POST` | `/2fa/login` | Complete login with 2FA |
-| `POST` | `/2fa/recover` | Recover access with a backup code |
-| `GET`  | `/2fa/recovery-log` | Paginated backup-code usage log |
-| `GET`  | `/2fa/audit-log/{user_id}` | Paginated 2FA audit log for a user |
-| `POST` | `/admin/quota` | Set per-user storage quota (admin) |
-| `POST` | `/admin/quota/unlimited` | Grant unlimited quota (admin) |
-| `POST` | `/admin/canary` | Create a canary user (admin) |
-| `GET`  | `/admin/flagged` | List all flagged submissions (admin) |
-| `GET`  | `/admin/flagged/{user_id}` | Flagged submissions for a user (admin) |
-| `GET`  | `/admin/users/{user_id}/2fa-summary` | 2FA summary for a user (admin) |
-| `POST` | `/tenant/provision` | Provision a new tenant (admin) |
-| `GET`  | `/ws/leaderboard` | WebSocket leaderboard feed |
-| `GET`  | `/health` | Health check |
-
-### Authentication
-All write and sensitive read endpoints require a Bearer JWT (`Authorization: Bearer <token>`).
-
-### Error format
-```json
-{ "error": "INVALID_TOKEN", "message": "The provided TOTP token has expired" }
-```
-
----
+# Smart Contract API
 
 ## View Functions (pure reads — no storage writes or event emissions)
 
@@ -113,50 +76,6 @@ The transfer-focused contract lives in `stellar-contracts/contracts/pet-transfer
 - transfer initiation and acceptance
 - transfer cancellation and reclaim flows
 - ownership history tracking
-
-## Backend 2FA
-
-The backend crate provides:
-
-- 2FA enrollment
-- token verification and activation
-- login-time token checks
-- disable and recovery flows
-- request tracing middleware
-- in-memory and Redis-backed rate limiting
-- standardized JSON error responses via `ApiError`
-
-For implementation details, read the crate sources in `backend-2fa/src/`.
-
-### Error response format
-
-Backend 2FA endpoints return structured JSON error payloads whenever a request fails. The shared schema is:
-
-```json
-{
-  "code": "BAD_REQUEST",
-  "message": "A human-readable error message",
-  "details": null
-}
-```
-
-| Field | Type | Description |
-|---|---|---|
-| `code` | `String` | A machine-readable error code |
-| `message` | `String` | A user-facing description of the failure |
-| `details` | `Option` | Optional structured context for the error |
-
-Common error codes:
-
-- `BAD_REQUEST` — malformed request or invalid payload
-- `UNAUTHORIZED` — authentication / login token invalid or missing
-- `FORBIDDEN` — authorization failed for the current user
-- `NOT_FOUND` — requested resource does not exist
-- `CONFLICT` — request conflicts with current state
-- `INVALID_TOKEN` — two-factor token invalid or expired
-- `INTERNAL_SERVER_ERROR` — unexpected failure on the backend
-
-All unhandled panics are also caught by middleware and translated into a `500 Internal Server Error` with an `ApiError` payload.
 
 ---
 
@@ -251,12 +170,12 @@ if let Some(health) = summary {
     if let Some(vax) = health.latest_vaccination {
         // Display vaccination info
     }
-    
+
     // Check lab results
     if let Some(lab) = health.latest_lab_result {
         // Display lab results
     }
-    
+
     // Check insurance coverage
     if let Some(policy) = health.active_insurance_policy {
         // Display insurance info
@@ -314,4 +233,3 @@ Batch operations return `Option<T>` rather than panicking:
 - `None` - Pet doesn't exist OR access denied
 
 This design allows clients to handle missing data and access denial uniformly.
-
