@@ -1,26 +1,31 @@
-# Kora App Contracts
+# Kora App
 
-Smart contracts for Kora App's on-chain pet registry: ownership, veterinary access,
-medical records, and adoption/transfer flows.
+Kora App is a blockchain-based pet registry and veterinary records platform.
+It gives pet owners, veterinarians, and insurers a shared, tamper-evident
+source of truth for pet identity, ownership history, medical records, and
+care events — enforced on-chain instead of trusted to a single database.
 
-## Repository Layout
+This repository is a monorepo: it holds both on-chain implementations of the
+registry, plus the docs that describe how they work together.
 
-```text
-Kora-App-Contracts/
-├── stellar-contracts/       # Soroban smart contract crate
-│   ├── src/lib.rs           # Main contract
-│   ├── src/test_*.rs        # Test modules
-│   └── contracts/
-│       └── pet-transfer-adoption/
-├── celo-contracts/          # Solidity registry (Hardhat, Celo network)
-│   └── contracts/
-│       └── KoraRegistry.sol
-└── docs/
-    ├── architecture.md
-    ├── development.md
-    ├── api.md
-    └── error-codes.md
-```
+## What's inside
+
+- **`stellar-contracts/`** — the primary implementation: a Soroban (Rust)
+  smart contract on Stellar, plus a nested pet transfer/adoption contract.
+- **`celo-contracts/`** — a parallel Solidity implementation of the registry
+  (`KoraRegistry.sol`) targeting the Celo network via Hardhat.
+- **`docs/`** — architecture notes, the smart contract API reference, error
+  codes, environment variables, and the OpenAPI spec for the companion 2FA
+  backend service.
+
+## Core capabilities
+
+- Pet registration, profiles, and ownership transfer/adoption flows
+- Veterinarian registration and verification
+- Medical records, vaccinations, lab results, and attachments
+- Emergency contacts and emergency access
+- Insurance, grooming, nutrition, activity, and behavior tracking
+- Multisig admin, upgrade proposals, and audit logging
 
 ## Quick Start
 
