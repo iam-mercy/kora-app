@@ -3,7 +3,7 @@
 ## Repository Layout
 
 ```text
-Kora-App-Contracts/
+kora-app/
 ├── README.md
 ├── SECURITY.md
 ├── CONTRIBUTING.md
