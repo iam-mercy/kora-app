@@ -306,6 +306,24 @@ Additional languages can be added by admins using the `set_error_message` functi
 
 ---
 
+### Medical Record Soft-Delete & Retention Errors (161-163)
+
+| Code | Name | English Message | Spanish Message |
+|------|------|-----------------|-----------------|
+| 161 | `RecordAlreadyDeleted` | Record already deleted | Registro ya eliminado |
+| 162 | `RetentionPeriodNotMet` | Retention period not met | Período de retención no cumplido |
+| 163 | `RecordNotFound` | Record not found | Registro no encontrado |
+
+**Description:**
+- Errors in the medical-record soft-delete / purge lifecycle
+- `RetentionPeriodNotMet` is raised when a purge is attempted before the
+  configured retention window has elapsed
+- `ContractError` previously defined `RecordAlreadyDeleted` twice (`= 161` and a
+  duplicate `= 163` that collided with `RecordNotFound`); the duplicate was
+  removed and the canonical value is `161`
+
+---
+
 ### Error Registry Errors (170)
 
 | Code | Name | English Message | Spanish Message |

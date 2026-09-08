@@ -80,8 +80,15 @@ Top `twiggy` contributors in the optimized artifact:
 | `data[0]` | 1,953 | 4.74% |
 | largest code body `code[95]` | 1,359 | 3.29% |
 
-The root `stellar-contracts` crate currently does not produce a release Wasm
-artifact because `stellar-contracts/src/lib.rs` contains duplicate contract
-type definitions and a test module nested inside an impl block. Run the same
-audit command from `stellar-contracts/` after those pre-existing compile
-blockers are removed.
+The root `stellar-contracts` crate also produces a release Wasm artifact.
+It is a workspace member, so the build output lands in the workspace-root
+`target/` directory:
+
+```bash
+cd stellar-contracts
+cargo build --target wasm32-unknown-unknown --release
+twiggy top -n 12 ../target/wasm32-unknown-unknown/release/kora_stellar.wasm
+```
+
+The build emits `target/wasm32-unknown-unknown/release/kora_stellar.wasm`
+(relative to the repo root; 461,640 bytes).

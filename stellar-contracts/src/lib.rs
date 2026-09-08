@@ -337,11 +337,10 @@ pub enum ContractError {
     RecordAlreadyDeleted = 161,
     RecordNotFound = 163,
     RetentionPeriodNotMet = 162,
-    RecordAlreadyDeleted = 163,
     ProposalExpired = 43,
     ProposalNotApproved = 44,
     ProposalAlreadyExecuted = 38,
-    ProposalNotFound = 39,
+    ProposalNotFound = 80,
     RollbackWindowExpired = 40,
     NoPreviousUpgrade = 41,
     QuorumNotMet = 45,
@@ -2537,7 +2536,7 @@ impl KoraContract {
     /// Admin-only: override the per-address active subscription cap enforced
     /// by `register_subscription`. Lets private deployments (e.g. hospital
     /// instances) scale the limit without redeploying the contract.
-    pub fn set_max_subscriptions_per_address(env: Env, admin: Address, max: u32) {
+    pub fn set_max_subs_per_address(env: Env, admin: Address, max: u32) {
         admin.require_auth();
         if !Self::is_admin_address(&env, &admin) {
             panic_with_error!(&env, ContractError::NotAnAdmin);
