@@ -17,11 +17,16 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          target: wasm32-unknown-unknown
+          # soroban-sdk 28 builds the contract for wasm32v1-none only, and the
+          # build must go through `stellar contract build` (>= v25.2.0) so the
+          # spec-shaking strip runs — a plain `cargo build` now hard-errors.
+          target: wasm32v1-none
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli
       - name: Build contracts
         run: |
           cd stellar-contracts
-          cargo build --target wasm32-unknown-unknown --release
+          stellar contract build --optimize=false
 
   fmt:
     runs-on: ubuntu-latest

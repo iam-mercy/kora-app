@@ -82,13 +82,25 @@ Top `twiggy` contributors in the optimized artifact:
 
 The root `stellar-contracts` crate also produces a release Wasm artifact.
 It is a workspace member, so the build output lands in the workspace-root
-`target/` directory:
+`target/` directory. `soroban-sdk` 28 requires the build to go through
+`stellar contract build` (stellar-cli >= v25.2.0), which targets
+`wasm32v1-none` and runs the spec-shaking strip; a plain `cargo build` for a
+wasm target now hard-errors.
 
 ```bash
 cd stellar-contracts
-cargo build --target wasm32-unknown-unknown --release
-twiggy top -n 12 ../target/wasm32-unknown-unknown/release/kora_stellar.wasm
+stellar contract build --optimize=false
+wasm-opt -Oz --mvp-features \
+  ../target/wasm32v1-none/release/kora_stellar.wasm \
+  -o ../target/wasm32v1-none/release/kora_stellar.optimized.wasm
+twiggy top -n 12 ../target/wasm32v1-none/release/kora_stellar.optimized.wasm
 ```
 
-The build emits `target/wasm32-unknown-unknown/release/kora_stellar.wasm`
-(relative to the repo root; 461,640 bytes).
+The build emits `target/wasm32v1-none/release/kora_stellar.wasm` (relative to
+the repo root; ~253,600 bytes), and the `wasm-opt` pass brings it to
+~219,161 bytes.
+
+> **Not deployable yet.** That is still ~88 KB over Soroban's 131,072-byte
+> `contract_max_size_bytes` cap, so the contract cannot be uploaded to any live
+> network until it is split. See
+> [issue #2](https://github.com/iam-mercy/kora-app/issues/2).
