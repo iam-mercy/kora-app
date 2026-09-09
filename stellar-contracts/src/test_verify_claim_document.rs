@@ -22,7 +22,7 @@ fn store_doc_hashes(
 fn test_verify_claim_document_matching_hash() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
 
     let claim_id: u64 = 1;
@@ -39,7 +39,7 @@ fn test_verify_claim_document_matching_hash() {
 fn test_verify_claim_document_non_matching_hash() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
 
     let claim_id: u64 = 1;
@@ -57,7 +57,7 @@ fn test_verify_claim_document_non_matching_hash() {
 fn test_verify_claim_document_out_of_bounds_index() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
 
     // No documents stored for claim_id 99

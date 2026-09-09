@@ -44,7 +44,7 @@ fn setup_pet_with_contact(
 fn first_three_calls_succeed() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
@@ -60,7 +60,7 @@ fn first_three_calls_succeed() {
 fn fourth_call_within_the_hour_fails() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
@@ -82,7 +82,7 @@ fn fourth_call_within_the_hour_fails() {
 fn limit_resets_after_the_window_elapses() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);
@@ -104,7 +104,7 @@ fn limit_resets_after_the_window_elapses() {
 fn rate_limit_is_scoped_per_caller_and_pet() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
 
     let owner = Address::generate(&env);

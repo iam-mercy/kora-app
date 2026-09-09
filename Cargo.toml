@@ -3,3 +3,29 @@ members = [
     "stellar-contracts",
 ]
 resolver = "2"
+
+# Build profiles must be declared at the workspace root — Cargo ignores
+# [profile.*] tables in member crates (it emits a warning if you try). These were
+# previously in stellar-contracts/Cargo.toml and silently had no effect; moving
+# them here makes the size-oriented release settings (opt-level "z", LTO, symbol
+# stripping, abort-on-panic) actually apply to the contract Wasm.
+
+[profile.dev]
+panic = "unwind"
+
+[profile.test]
+panic = "unwind"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true

@@ -27,7 +27,7 @@ fn setup() -> (
 ) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let sire = register_pet(&env, &client, &owner, "Sire");
@@ -42,7 +42,7 @@ fn setup() -> (
 fn test_self_reference_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
     let sire = register_pet(&env, &client, &owner, "Sire");

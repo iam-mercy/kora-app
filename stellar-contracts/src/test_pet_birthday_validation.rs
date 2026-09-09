@@ -5,7 +5,7 @@ use soroban_sdk::{
 };
 
 fn make_client(env: &Env) -> KoraContractClient {
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(env, &contract_id);
     let admin = Address::generate(env);
     client.init_admin(&admin);

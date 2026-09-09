@@ -2,7 +2,7 @@ use crate::{ContractError, KoraContract, KoraContractClient};
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 fn setup(env: &Env) -> (KoraContractClient, Address) {
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(env, &contract_id);
     let admin = Address::generate(env);
     client.init_admin(&admin);

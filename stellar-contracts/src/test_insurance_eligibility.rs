@@ -19,10 +19,10 @@ const NOW: u64 = 1_700_000_000;
 fn setup() -> (Env, KoraContractClient<'static>, Address, Address, u64) {
     let env = Env::default();
     env.mock_all_auths();
-    env.budget().reset_unlimited();
+    env.cost_estimate().budget().reset_unlimited();
     env.ledger().set_timestamp(NOW);
 
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);

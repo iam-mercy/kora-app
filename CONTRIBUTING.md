@@ -6,13 +6,16 @@ Thank you for your interest in contributing to Kora App! This guide will help yo
 
 ### Prerequisites
 - Rust (latest stable)
-- Stellar CLI: `cargo install --locked stellar-cli --features opt`
+- Stellar CLI (>= v25.2.0): `cargo install --locked stellar-cli --features opt`
+- `wasm-opt` (binaryen), for size optimization
 
 ### Setup
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/kora-app.git`
 3. Navigate to project: `cd kora-app`
-4. Build contracts: `cd stellar-contracts && cargo build --target wasm32-unknown-unknown --release`
+4. Build contracts: `cd stellar-contracts && stellar contract build --optimize=false`
+   (soroban-sdk 28 targets `wasm32v1-none` and requires `stellar contract build`;
+   a plain `cargo build` for a wasm target now errors)
 5. Run tests: `cargo test`
 
 ## Code Style

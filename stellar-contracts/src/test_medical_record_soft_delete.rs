@@ -11,7 +11,7 @@ use soroban_sdk::{
 
 fn setup(env: &Env) -> (KoraContractClient<'_>, Address, Address, u64) {
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(env, &contract_id);
 
     let admin = Address::generate(env);
@@ -247,7 +247,7 @@ fn test_admin_purge_after_retention_succeeds() {
     // we need the admin address. Use a fresh env to get the admin.
     let env2 = Env::default();
     env2.mock_all_auths();
-    let contract_id2 = env2.register_contract(None, KoraContract);
+    let contract_id2 = env2.register(KoraContract, ());
     let client2 = KoraContractClient::new(&env2, &contract_id2);
     let admin2 = Address::generate(&env2);
     let vet2 = Address::generate(&env2);
@@ -299,7 +299,7 @@ fn test_custom_retention_period_respected() {
     let env = Env::default();
     env.ledger().with_mut(|l| l.timestamp = 1_700_000_000);
 
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     env.mock_all_auths();
     let client = KoraContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
