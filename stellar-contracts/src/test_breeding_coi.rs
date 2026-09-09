@@ -50,7 +50,7 @@ fn breed_and_assign(
 fn test_coi_unrelated_pair_returns_zero() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
 
@@ -68,7 +68,7 @@ fn test_coi_unrelated_pair_returns_zero() {
 fn test_coi_half_siblings_returns_1250() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
 
@@ -98,7 +98,7 @@ fn test_coi_half_siblings_returns_1250() {
 fn test_coi_first_cousins_full_siblings_returns_624() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
 
@@ -147,7 +147,7 @@ fn test_coi_first_cousins_full_siblings_returns_624() {
 fn test_register_breeding_pair_rejects_high_coi() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
 
@@ -176,7 +176,7 @@ fn test_register_breeding_pair_rejects_high_coi() {
 fn test_register_breeding_pair_allows_unrelated() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
 
@@ -204,7 +204,7 @@ fn test_register_breeding_pair_allows_unrelated() {
 fn test_register_breeding_pair_rejects_self_breeding() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
 

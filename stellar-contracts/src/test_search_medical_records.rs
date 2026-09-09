@@ -26,7 +26,7 @@ mod test_search_medical_records {
         env.mock_all_auths();
 
         let admin = Address::generate(&env);
-        let contract_id = env.register_contract(None, KoraContract);
+        let contract_id = env.register(KoraContract, ());
         let client = KoraContractClient::new(&env, &contract_id);
         client.init_admin(&admin);
 

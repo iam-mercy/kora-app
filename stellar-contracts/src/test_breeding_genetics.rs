@@ -4,7 +4,7 @@ use soroban_sdk::{testutils::Address as _, Address, Env, Map, String};
 fn setup() -> (Env, KoraContractClient<'static>, Address, u64, u64) {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
     let owner = Address::generate(&env);
 

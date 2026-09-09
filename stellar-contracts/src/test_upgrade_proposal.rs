@@ -6,7 +6,7 @@ use soroban_sdk::{
 
 fn setup(env: &Env) -> (KoraContractClient, Address, Address) {
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(env, &contract_id);
 
     let admin1 = Address::generate(env);

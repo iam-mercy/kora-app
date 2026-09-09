@@ -6,7 +6,7 @@ fn setup() -> (Env, KoraContractClient<'static>, Address, u64) {
     env.mock_all_auths();
 
     let owner = Address::generate(&env);
-    let contract_id = env.register_contract(None, KoraContract);
+    let contract_id = env.register(KoraContract, ());
     let client = KoraContractClient::new(&env, &contract_id);
 
     let pet_id = client.register_pet(
