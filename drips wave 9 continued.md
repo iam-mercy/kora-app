@@ -4,7 +4,7 @@
 `iam-mercy/kora-app`
 
 ### Backlog purpose
-This document continues the Drips Wave 9 engineering backlog with **75 new, concrete, codebase-grounded engineering issues** (numbered `#51` through `#125`). These issues represent pending, unpublished engineering tasks identified through in-depth code review across Soroban smart contracts, Celo Solidity contracts, testing infrastructure, and peripheral modules.
+This document records the continuation of the Drips Wave 9 engineering backlog (issues #51 through #125). All 75 issues have been reviewed and published to GitHub under the `wave-9` label. The live discussion threads, acceptance criteria, and full specifications are tracked below.
 
 ### Summary
 - **Total new issues**: 75
@@ -23,7 +23,93 @@ This document continues the Drips Wave 9 engineering backlog with **75 new, conc
 
 ---
 
+### Published GitHub Issues (Batch 2: #51 – #125)
+All 75 continuation engineering issues have been published to GitHub in `iam-mercy/kora-app` under the `wave-9` label:
+
+| Wave 9 # | GitHub Issue | Title | URL | Status |
+|:---:|:---:|---|---|:---:|
+| #51 | [#56](https://github.com/iam-mercy/kora-app/issues/56) | Prevent unauthorized callers from raising frivolous disputes against arbitrary pets | https://github.com/iam-mercy/kora-app/issues/56 | Published |
+| #52 | [#57](https://github.com/iam-mercy/kora-app/issues/57) | Enforce registered arbitrator verification in `resolve_dispute` | https://github.com/iam-mercy/kora-app/issues/57 | Published |
+| #53 | [#58](https://github.com/iam-mercy/kora-app/issues/58) | Prevent duplicate voting and post-resolution voting in dispute ballots | https://github.com/iam-mercy/kora-app/issues/58 | Published |
+| #54 | [#59](https://github.com/iam-mercy/kora-app/issues/59) | Validate evidence CID format and input length in `submit_evidence` | https://github.com/iam-mercy/kora-app/issues/59 | Published |
+| #55 | [#60](https://github.com/iam-mercy/kora-app/issues/60) | Enforce lower and upper bounds on dispute appeal window duration | https://github.com/iam-mercy/kora-app/issues/60 | Published |
+| #56 | [#61](https://github.com/iam-mercy/kora-app/issues/61) | Implement evidence cryptographic signature verification in `verify_evidence` | https://github.com/iam-mercy/kora-app/issues/61 | Published |
+| #57 | [#62](https://github.com/iam-mercy/kora-app/issues/62) | Pause pet transfer expiration timers during active custody disputes in `pet-transfer-adoption` | https://github.com/iam-mercy/kora-app/issues/62 | Published |
+| #58 | [#63](https://github.com/iam-mercy/kora-app/issues/63) | Replace linear scan in `get_pet_disputes` with indexed dispute lookup | https://github.com/iam-mercy/kora-app/issues/63 | Published |
+| #59 | [#64](https://github.com/iam-mercy/kora-app/issues/64) | Validate positive interval days in `create_grooming_schedule` | https://github.com/iam-mercy/kora-app/issues/64 | Published |
+| #60 | [#65](https://github.com/iam-mercy/kora-app/issues/65) | Enforce admin verification on professional groomer registration | https://github.com/iam-mercy/kora-app/issues/65 | Published |
+| #61 | [#66](https://github.com/iam-mercy/kora-app/issues/66) | Restrict groomer rating to verified appointment clients and enforce 1-5 star scale | https://github.com/iam-mercy/kora-app/issues/66 | Published |
+| #62 | [#67](https://github.com/iam-mercy/kora-app/issues/67) | Prevent duplicate slot booking at identical timestamps for groomers | https://github.com/iam-mercy/kora-app/issues/67 | Published |
+| #63 | [#68](https://github.com/iam-mercy/kora-app/issues/68) | Enforce pet owner authorization on `cancel_grooming_schedule` | https://github.com/iam-mercy/kora-app/issues/68 | Published |
+| #64 | [#69](https://github.com/iam-mercy/kora-app/issues/69) | Enforce groomer caller authentication in `advance_schedule` | https://github.com/iam-mercy/kora-app/issues/69 | Published |
+| #65 | [#70](https://github.com/iam-mercy/kora-app/issues/70) | Validate severity bounds and caller role in `add_behavior_record` | https://github.com/iam-mercy/kora-app/issues/70 | Published |
+| #66 | [#71](https://github.com/iam-mercy/kora-app/issues/71) | Add pagination support to `get_behavior_history` | https://github.com/iam-mercy/kora-app/issues/71 | Published |
+| #67 | [#72](https://github.com/iam-mercy/kora-app/issues/72) | Fix UTC midnight boundary calculation in `get_activity_streak` | https://github.com/iam-mercy/kora-app/issues/72 | Published |
+| #68 | [#73](https://github.com/iam-mercy/kora-app/issues/73) | Fix milestone threshold comparison in `has_reached_milestone` | https://github.com/iam-mercy/kora-app/issues/73 | Published |
+| #69 | [#74](https://github.com/iam-mercy/kora-app/issues/74) | Enforce storage quota tracking on `add_behavior_record` | https://github.com/iam-mercy/kora-app/issues/74 | Published |
+| #70 | [#75](https://github.com/iam-mercy/kora-app/issues/75) | Reject future timestamps in `log_feeding` | https://github.com/iam-mercy/kora-app/issues/75 | Published |
+| #71 | [#76](https://github.com/iam-mercy/kora-app/issues/76) | Enforce positive weight and realistic upper bounds in `add_weight_entry` | https://github.com/iam-mercy/kora-app/issues/76 | Published |
+| #72 | [#77](https://github.com/iam-mercy/kora-app/issues/77) | Implement pagination in `get_weight_history` | https://github.com/iam-mercy/kora-app/issues/77 | Published |
+| #73 | [#78](https://github.com/iam-mercy/kora-app/issues/78) | Enforce pet owner authorization on `set_nutrition_version` | https://github.com/iam-mercy/kora-app/issues/78 | Published |
+| #74 | [#79](https://github.com/iam-mercy/kora-app/issues/79) | Prevent rollback to invalid or non-existent versions in `rollback_nutrition` | https://github.com/iam-mercy/kora-app/issues/79 | Published |
+| #75 | [#80](https://github.com/iam-mercy/kora-app/issues/80) | Prevent integer overflow in `get_daily_summary` calorie accumulation | https://github.com/iam-mercy/kora-app/issues/80 | Published |
+| #76 | [#81](https://github.com/iam-mercy/kora-app/issues/81) | Enforce pet owner authorization on `link_tag_to_pet` | https://github.com/iam-mercy/kora-app/issues/81 | Published |
+| #77 | [#82](https://github.com/iam-mercy/kora-app/issues/82) | Enforce string length validation on `update_tag_message` | https://github.com/iam-mercy/kora-app/issues/82 | Published |
+| #78 | [#83](https://github.com/iam-mercy/kora-app/issues/83) | Enforce caller authentication on `deactivate_tag` and `reactivate_tag` | https://github.com/iam-mercy/kora-app/issues/83 | Published |
+| #79 | [#84](https://github.com/iam-mercy/kora-app/issues/84) | Unlink active tag from previous pet before re-linking in `link_tag_to_pet` | https://github.com/iam-mercy/kora-app/issues/84 | Published |
+| #80 | [#85](https://github.com/iam-mercy/kora-app/issues/85) | Distinguish non-existent tags from deactivated tags in `is_tag_active` | https://github.com/iam-mercy/kora-app/issues/85 | Published |
+| #81 | [#86](https://github.com/iam-mercy/kora-app/issues/86) | Enforce expiration date strictly greater than administration date in `add_vaccination` | https://github.com/iam-mercy/kora-app/issues/86 | Published |
+| #82 | [#87](https://github.com/iam-mercy/kora-app/issues/87) | Enforce administering vet or admin authorization on `revoke_vaccination_certificate` | https://github.com/iam-mercy/kora-app/issues/87 | Published |
+| #83 | [#88](https://github.com/iam-mercy/kora-app/issues/88) | Prevent duplicate certificate hash anchoring in `anchor_certificate` | https://github.com/iam-mercy/kora-app/issues/88 | Published |
+| #84 | [#89](https://github.com/iam-mercy/kora-app/issues/89) | Fix timestamp comparison inequality in `verify_certificate` | https://github.com/iam-mercy/kora-app/issues/89 | Published |
+| #85 | [#90](https://github.com/iam-mercy/kora-app/issues/90) | Support configurable window duration in `get_upcoming_vaccinations` | https://github.com/iam-mercy/kora-app/issues/90 | Published |
+| #86 | [#91](https://github.com/iam-mercy/kora-app/issues/91) | Optimize vet-filtered vaccination expiry query in `get_expiring_vaccinations` | https://github.com/iam-mercy/kora-app/issues/91 | Published |
+| #87 | [#92](https://github.com/iam-mercy/kora-app/issues/92) | Validate reference range boundaries in `add_lab_result` | https://github.com/iam-mercy/kora-app/issues/92 | Published |
+| #88 | [#93](https://github.com/iam-mercy/kora-app/issues/93) | Enforce veterinarian verification on `add_lab_result` | https://github.com/iam-mercy/kora-app/issues/93 | Published |
+| #89 | [#94](https://github.com/iam-mercy/kora-app/issues/94) | Guard against division by zero in biomarker anomaly detection calculations | https://github.com/iam-mercy/kora-app/issues/94 | Published |
+| #90 | [#95](https://github.com/iam-mercy/kora-app/issues/95) | Enforce pet privacy access controls on `get_lab_results` | https://github.com/iam-mercy/kora-app/issues/95 | Published |
+| #91 | [#96](https://github.com/iam-mercy/kora-app/issues/96) | Scope `get_lab_result_count` per pet to prevent global transaction metrics leakage | https://github.com/iam-mercy/kora-app/issues/96 | Published |
+| #92 | [#97](https://github.com/iam-mercy/kora-app/issues/97) | Capture author address and block timestamp in `amend_medical_record` | https://github.com/iam-mercy/kora-app/issues/97 | Published |
+| #93 | [#98](https://github.com/iam-mercy/kora-app/issues/98) | Prevent out-of-bounds index panic in `diff_record_versions` | https://github.com/iam-mercy/kora-app/issues/98 | Published |
+| #94 | [#99](https://github.com/iam-mercy/kora-app/issues/99) | Enforce caller authorization on `delete_medical_record` soft deletion | https://github.com/iam-mercy/kora-app/issues/99 | Published |
+| #95 | [#100](https://github.com/iam-mercy/kora-app/issues/100) | Preserve audit history and emit event on `update_medical_record_notes` | https://github.com/iam-mercy/kora-app/issues/100 | Published |
+| #96 | [#101](https://github.com/iam-mercy/kora-app/issues/101) | Update active record count when purging expired records in `purge_expired_records` | https://github.com/iam-mercy/kora-app/issues/101 | Published |
+| #97 | [#102](https://github.com/iam-mercy/kora-app/issues/102) | Enforce minimum regulatory retention floor in `set_retention_period` | https://github.com/iam-mercy/kora-app/issues/102 | Published |
+| #98 | [#103](https://github.com/iam-mercy/kora-app/issues/103) | Validate medical record existence before attaching files in `add_attachment` | https://github.com/iam-mercy/kora-app/issues/103 | Published |
+| #99 | [#104](https://github.com/iam-mercy/kora-app/issues/104) | Enforce `MAX_ATTACHMENTS_PER_RECORD` bound in `add_attachment` | https://github.com/iam-mercy/kora-app/issues/104 | Published |
+| #100 | [#105](https://github.com/iam-mercy/kora-app/issues/105) | Enforce allowed MIME types on attachment metadata | https://github.com/iam-mercy/kora-app/issues/105 | Published |
+| #101 | [#106](https://github.com/iam-mercy/kora-app/issues/106) | Enforce privacy level access controls on `get_attachments` | https://github.com/iam-mercy/kora-app/issues/106 | Published |
+| #102 | [#107](https://github.com/iam-mercy/kora-app/issues/107) | Enforce pet storage quota consumption on attachment additions | https://github.com/iam-mercy/kora-app/issues/107 | Published |
+| #103 | [#108](https://github.com/iam-mercy/kora-app/issues/108) | Record transfer reason and animal condition in custody chain entries | https://github.com/iam-mercy/kora-app/issues/108 | Published |
+| #104 | [#109](https://github.com/iam-mercy/kora-app/issues/109) | Fix same-ledger timestamp validation bug in `verify_custody_chain` | https://github.com/iam-mercy/kora-app/issues/109 | Published |
+| #105 | [#110](https://github.com/iam-mercy/kora-app/issues/110) | Redact previous owner wallet addresses for private pets in `get_ownership_history` | https://github.com/iam-mercy/kora-app/issues/110 | Published |
+| #106 | [#111](https://github.com/iam-mercy/kora-app/issues/111) | Log custody entry on `finalize_transfer` in `pet-transfer-adoption` | https://github.com/iam-mercy/kora-app/issues/111 | Published |
+| #107 | [#112](https://github.com/iam-mercy/kora-app/issues/112) | Make `batch_initiate_transfer` all-or-nothing atomic across pet batches | https://github.com/iam-mercy/kora-app/issues/112 | Published |
+| #108 | [#113](https://github.com/iam-mercy/kora-app/issues/113) | Prevent duplicate emergency responder address registrations | https://github.com/iam-mercy/kora-app/issues/113 | Published |
+| #109 | [#114](https://github.com/iam-mercy/kora-app/issues/114) | Verify responder existence before deletion in `remove_emergency_responder` | https://github.com/iam-mercy/kora-app/issues/114 | Published |
+| #110 | [#115](https://github.com/iam-mercy/kora-app/issues/115) | Validate index bounds in `reorder_contact` to prevent VM panics | https://github.com/iam-mercy/kora-app/issues/115 | Published |
+| #111 | [#116](https://github.com/iam-mercy/kora-app/issues/116) | Add pagination support to `get_emergency_access_logs` | https://github.com/iam-mercy/kora-app/issues/116 | Published |
+| #112 | [#117](https://github.com/iam-mercy/kora-app/issues/117) | Standardize emergency notification rate limits to timestamp-based windows | https://github.com/iam-mercy/kora-app/issues/117 | Published |
+| #113 | [#118](https://github.com/iam-mercy/kora-app/issues/118) | Prevent registering the same offspring pet ID to multiple litters | https://github.com/iam-mercy/kora-app/issues/118 | Published |
+| #114 | [#119](https://github.com/iam-mercy/kora-app/issues/119) | Replace manipulable timestamp pseudo-randomness in `compute_offspring_traits` | https://github.com/iam-mercy/kora-app/issues/119 | Published |
+| #115 | [#120](https://github.com/iam-mercy/kora-app/issues/120) | Cap cumulative basis points in `get_trait_probability` to 10,000 bps | https://github.com/iam-mercy/kora-app/issues/120 | Published |
+| #116 | [#121](https://github.com/iam-mercy/kora-app/issues/121) | Verify active and non-archived status of breeding pairs in `register_breeding_pair` | https://github.com/iam-mercy/kora-app/issues/121 | Published |
+| #117 | [#122](https://github.com/iam-mercy/kora-app/issues/122) | Enforce administrator authorization on `add_breed_metadata` | https://github.com/iam-mercy/kora-app/issues/122 | Published |
+| #118 | [#123](https://github.com/iam-mercy/kora-app/issues/123) | Validate pet existence in `deactivatePet` and `reactivatePet` in `KoraRegistry.sol` | https://github.com/iam-mercy/kora-app/issues/123 | Published |
+| #119 | [#124](https://github.com/iam-mercy/kora-app/issues/124) | Prevent orphan medical records by verifying pet existence in `addMedicalRecord` in `KoraRegistry.sol` | https://github.com/iam-mercy/kora-app/issues/124 | Published |
+| #120 | [#125](https://github.com/iam-mercy/kora-app/issues/125) | Bound loop iterations in `getPetRecordsByDateRange` to prevent out-of-gas reverts | https://github.com/iam-mercy/kora-app/issues/125 | Published |
+| #121 | [#126](https://github.com/iam-mercy/kora-app/issues/126) | Enforce maximum string length validation on license and specialization in `registerVet` in `KoraRegistry.sol` | https://github.com/iam-mercy/kora-app/issues/126 | Published |
+| #122 | [#127](https://github.com/iam-mercy/kora-app/issues/127) | Prevent concurrent signing of duplicate adoption applications in `pet-transfer-adoption` | https://github.com/iam-mercy/kora-app/issues/127 | Published |
+| #123 | [#128](https://github.com/iam-mercy/kora-app/issues/128) | Enforce administrator authentication in `waive_waiting_period` in `pet-transfer-adoption` | https://github.com/iam-mercy/kora-app/issues/128 | Published |
+| #124 | [#129](https://github.com/iam-mercy/kora-app/issues/129) | Enforce non-zero timeout duration in `initiate_transfer_with_timeout` in `pet-transfer-adoption` | https://github.com/iam-mercy/kora-app/issues/129 | Published |
+| #125 | [#130](https://github.com/iam-mercy/kora-app/issues/130) | Prevent reclaim of already accepted or finalized transfers in `reclaim_transfer` in `pet-transfer-adoption` | https://github.com/iam-mercy/kora-app/issues/130 | Published |
+
+---
+
 ## #51: Prevent unauthorized callers from raising frivolous disputes against arbitrary pets
+
+- **GitHub Issue**: [#56](https://github.com/iam-mercy/kora-app/issues/56)
+- **Status**: `Published`
 
 ### Category
 Access Control
@@ -72,6 +158,9 @@ Depends on #25
 
 ## #52: Enforce registered arbitrator verification in `resolve_dispute`
 
+- **GitHub Issue**: [#57](https://github.com/iam-mercy/kora-app/issues/57)
+- **Status**: `Published`
+
 ### Category
 Security
 
@@ -113,6 +202,9 @@ Depends on #51
 ---
 
 ## #53: Prevent duplicate voting and post-resolution voting in dispute ballots
+
+- **GitHub Issue**: [#58](https://github.com/iam-mercy/kora-app/issues/58)
+- **Status**: `Published`
 
 ### Category
 Smart Contract
@@ -157,6 +249,9 @@ Depends on #51
 
 ## #54: Validate evidence CID format and input length in `submit_evidence`
 
+- **GitHub Issue**: [#59](https://github.com/iam-mercy/kora-app/issues/59)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -198,6 +293,9 @@ Dependencies: None
 ---
 
 ## #55: Enforce lower and upper bounds on dispute appeal window duration
+
+- **GitHub Issue**: [#60](https://github.com/iam-mercy/kora-app/issues/60)
+- **Status**: `Published`
 
 ### Category
 Smart Contract
@@ -243,6 +341,9 @@ Dependencies: None
 
 ## #56: Implement evidence cryptographic signature verification in `verify_evidence`
 
+- **GitHub Issue**: [#61](https://github.com/iam-mercy/kora-app/issues/61)
+- **Status**: `Published`
+
 ### Category
 Security
 
@@ -286,6 +387,9 @@ Depends on #52
 
 ## #57: Pause pet transfer expiration timers during active custody disputes in `pet-transfer-adoption`
 
+- **GitHub Issue**: [#62](https://github.com/iam-mercy/kora-app/issues/62)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -322,6 +426,9 @@ Depends on #6, #7
 ---
 
 ## #58: Replace linear scan in `get_pet_disputes` with indexed dispute lookup
+
+- **GitHub Issue**: [#63](https://github.com/iam-mercy/kora-app/issues/63)
+- **Status**: `Published`
 
 ### Category
 Performance
@@ -366,6 +473,9 @@ Depends on #9
 
 ## #59: Validate positive interval days in `create_grooming_schedule`
 
+- **GitHub Issue**: [#64](https://github.com/iam-mercy/kora-app/issues/64)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -406,6 +516,9 @@ Dependencies: None
 ---
 
 ## #60: Enforce admin verification on professional groomer registration
+
+- **GitHub Issue**: [#65](https://github.com/iam-mercy/kora-app/issues/65)
+- **Status**: `Published`
 
 ### Category
 Access Control
@@ -448,6 +561,9 @@ Dependencies: None
 ---
 
 ## #61: Restrict groomer rating to verified appointment clients and enforce 1-5 star scale
+
+- **GitHub Issue**: [#66](https://github.com/iam-mercy/kora-app/issues/66)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -492,6 +608,9 @@ Dependencies: None
 
 ## #62: Prevent duplicate slot booking at identical timestamps for groomers
 
+- **GitHub Issue**: [#67](https://github.com/iam-mercy/kora-app/issues/67)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -532,6 +651,9 @@ Dependencies: None
 ---
 
 ## #63: Enforce pet owner authorization on `cancel_grooming_schedule`
+
+- **GitHub Issue**: [#68](https://github.com/iam-mercy/kora-app/issues/68)
+- **Status**: `Published`
 
 ### Category
 Access Control
@@ -574,6 +696,9 @@ Dependencies: None
 
 ## #64: Enforce groomer caller authentication in `advance_schedule`
 
+- **GitHub Issue**: [#69](https://github.com/iam-mercy/kora-app/issues/69)
+- **Status**: `Published`
+
 ### Category
 Access Control
 
@@ -613,6 +738,9 @@ Dependencies: None
 ---
 
 ## #65: Validate severity bounds and caller role in `add_behavior_record`
+
+- **GitHub Issue**: [#70](https://github.com/iam-mercy/kora-app/issues/70)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -655,6 +783,9 @@ Dependencies: None
 
 ## #66: Add pagination support to `get_behavior_history`
 
+- **GitHub Issue**: [#71](https://github.com/iam-mercy/kora-app/issues/71)
+- **Status**: `Published`
+
 ### Category
 Performance
 
@@ -695,6 +826,9 @@ Dependencies: None
 
 ## #67: Fix UTC midnight boundary calculation in `get_activity_streak`
 
+- **GitHub Issue**: [#72](https://github.com/iam-mercy/kora-app/issues/72)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -734,6 +868,9 @@ Dependencies: None
 ---
 
 ## #68: Fix milestone threshold comparison in `has_reached_milestone`
+
+- **GitHub Issue**: [#73](https://github.com/iam-mercy/kora-app/issues/73)
+- **Status**: `Published`
 
 ### Category
 Smart Contract
@@ -776,6 +913,9 @@ Dependencies: None
 
 ## #69: Enforce storage quota tracking on `add_behavior_record`
 
+- **GitHub Issue**: [#74](https://github.com/iam-mercy/kora-app/issues/74)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -816,6 +956,9 @@ Dependencies: Depends on #10
 
 ## #70: Reject future timestamps in `log_feeding`
 
+- **GitHub Issue**: [#75](https://github.com/iam-mercy/kora-app/issues/75)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -855,6 +998,9 @@ Dependencies: None
 ---
 
 ## #71: Enforce positive weight and realistic upper bounds in `add_weight_entry`
+
+- **GitHub Issue**: [#76](https://github.com/iam-mercy/kora-app/issues/76)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -897,6 +1043,9 @@ Dependencies: None
 
 ## #72: Implement pagination in `get_weight_history`
 
+- **GitHub Issue**: [#77](https://github.com/iam-mercy/kora-app/issues/77)
+- **Status**: `Published`
+
 ### Category
 Performance
 
@@ -936,6 +1085,9 @@ Dependencies: None
 ---
 
 ## #73: Enforce pet owner authorization on `set_nutrition_version`
+
+- **GitHub Issue**: [#78](https://github.com/iam-mercy/kora-app/issues/78)
+- **Status**: `Published`
 
 ### Category
 Access Control
@@ -977,6 +1129,9 @@ Dependencies: None
 
 ## #74: Prevent rollback to invalid or non-existent versions in `rollback_nutrition`
 
+- **GitHub Issue**: [#79](https://github.com/iam-mercy/kora-app/issues/79)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -1016,6 +1171,9 @@ Dependencies: None
 ---
 
 ## #75: Prevent integer overflow in `get_daily_summary` calorie accumulation
+
+- **GitHub Issue**: [#80](https://github.com/iam-mercy/kora-app/issues/80)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -1058,6 +1216,9 @@ Dependencies: None
 
 ## #76: Enforce pet owner authorization on `link_tag_to_pet`
 
+- **GitHub Issue**: [#81](https://github.com/iam-mercy/kora-app/issues/81)
+- **Status**: `Published`
+
 ### Category
 Access Control
 
@@ -1096,6 +1257,9 @@ Dependencies: None
 ---
 
 ## #77: Enforce string length validation on `update_tag_message`
+
+- **GitHub Issue**: [#82](https://github.com/iam-mercy/kora-app/issues/82)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -1136,6 +1300,9 @@ Dependencies: None
 
 ## #78: Enforce caller authentication on `deactivate_tag` and `reactivate_tag`
 
+- **GitHub Issue**: [#83](https://github.com/iam-mercy/kora-app/issues/83)
+- **Status**: `Published`
+
 ### Category
 Access Control
 
@@ -1174,6 +1341,9 @@ Dependencies: None
 ---
 
 ## #79: Unlink active tag from previous pet before re-linking in `link_tag_to_pet`
+
+- **GitHub Issue**: [#84](https://github.com/iam-mercy/kora-app/issues/84)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -1215,6 +1385,9 @@ Dependencies: None
 
 ## #80: Distinguish non-existent tags from deactivated tags in `is_tag_active`
 
+- **GitHub Issue**: [#85](https://github.com/iam-mercy/kora-app/issues/85)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -1255,6 +1428,9 @@ Dependencies: None
 
 ## #81: Enforce expiration date strictly greater than administration date in `add_vaccination`
 
+- **GitHub Issue**: [#86](https://github.com/iam-mercy/kora-app/issues/86)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -1294,6 +1470,9 @@ Dependencies: None
 ---
 
 ## #82: Enforce administering vet or admin authorization on `revoke_vaccination_certificate`
+
+- **GitHub Issue**: [#87](https://github.com/iam-mercy/kora-app/issues/87)
+- **Status**: `Published`
 
 ### Category
 Access Control
@@ -1336,6 +1515,9 @@ Dependencies: None
 
 ## #83: Prevent duplicate certificate hash anchoring in `anchor_certificate`
 
+- **GitHub Issue**: [#88](https://github.com/iam-mercy/kora-app/issues/88)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -1377,6 +1559,9 @@ Dependencies: None
 
 ## #84: Fix timestamp comparison inequality in `verify_certificate`
 
+- **GitHub Issue**: [#89](https://github.com/iam-mercy/kora-app/issues/89)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -1415,6 +1600,9 @@ Dependencies: None
 
 ## #85: Support configurable window duration in `get_upcoming_vaccinations`
 
+- **GitHub Issue**: [#90](https://github.com/iam-mercy/kora-app/issues/90)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -1452,6 +1640,9 @@ Dependencies: None
 ---
 
 ## #86: Optimize vet-filtered vaccination expiry query in `get_expiring_vaccinations`
+
+- **GitHub Issue**: [#91](https://github.com/iam-mercy/kora-app/issues/91)
+- **Status**: `Published`
 
 ### Category
 Performance
@@ -1493,6 +1684,9 @@ Dependencies: Depends on #9
 
 ## #87: Validate reference range boundaries in `add_lab_result`
 
+- **GitHub Issue**: [#92](https://github.com/iam-mercy/kora-app/issues/92)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -1532,6 +1726,9 @@ Dependencies: None
 ---
 
 ## #88: Enforce veterinarian verification on `add_lab_result`
+
+- **GitHub Issue**: [#93](https://github.com/iam-mercy/kora-app/issues/93)
+- **Status**: `Published`
 
 ### Category
 Access Control
@@ -1573,6 +1770,9 @@ Dependencies: Depends on #46
 
 ## #89: Guard against division by zero in biomarker anomaly detection calculations
 
+- **GitHub Issue**: [#94](https://github.com/iam-mercy/kora-app/issues/94)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -1610,6 +1810,9 @@ Dependencies: None
 ---
 
 ## #90: Enforce pet privacy access controls on `get_lab_results`
+
+- **GitHub Issue**: [#95](https://github.com/iam-mercy/kora-app/issues/95)
+- **Status**: `Published`
 
 ### Category
 Access Control
@@ -1651,6 +1854,9 @@ Dependencies: Depends on #12
 
 ## #91: Scope `get_lab_result_count` per pet to prevent global transaction metrics leakage
 
+- **GitHub Issue**: [#96](https://github.com/iam-mercy/kora-app/issues/96)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -1691,6 +1897,9 @@ Dependencies: None
 
 ## #92: Capture author address and block timestamp in `amend_medical_record`
 
+- **GitHub Issue**: [#97](https://github.com/iam-mercy/kora-app/issues/97)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -1729,6 +1938,9 @@ Dependencies: None
 ---
 
 ## #93: Prevent out-of-bounds index panic in `diff_record_versions`
+
+- **GitHub Issue**: [#98](https://github.com/iam-mercy/kora-app/issues/98)
+- **Status**: `Published`
 
 ### Category
 Smart Contract
@@ -1770,6 +1982,9 @@ Dependencies: None
 
 ## #94: Enforce caller authorization on `delete_medical_record` soft deletion
 
+- **GitHub Issue**: [#99](https://github.com/iam-mercy/kora-app/issues/99)
+- **Status**: `Published`
+
 ### Category
 Access Control
 
@@ -1809,6 +2024,9 @@ Dependencies: None
 ---
 
 ## #95: Preserve audit history and emit event on `update_medical_record_notes`
+
+- **GitHub Issue**: [#100](https://github.com/iam-mercy/kora-app/issues/100)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -1851,6 +2069,9 @@ Dependencies: None
 
 ## #96: Update active record count when purging expired records in `purge_expired_records`
 
+- **GitHub Issue**: [#101](https://github.com/iam-mercy/kora-app/issues/101)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -1890,6 +2111,9 @@ Dependencies: Depends on #11
 
 ## #97: Enforce minimum regulatory retention floor in `set_retention_period`
 
+- **GitHub Issue**: [#102](https://github.com/iam-mercy/kora-app/issues/102)
+- **Status**: `Published`
+
 ### Category
 Security
 
@@ -1928,6 +2152,9 @@ Dependencies: None
 ---
 
 ## #98: Validate medical record existence before attaching files in `add_attachment`
+
+- **GitHub Issue**: [#103](https://github.com/iam-mercy/kora-app/issues/103)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -1969,6 +2196,9 @@ Dependencies: None
 
 ## #99: Enforce `MAX_ATTACHMENTS_PER_RECORD` bound in `add_attachment`
 
+- **GitHub Issue**: [#104](https://github.com/iam-mercy/kora-app/issues/104)
+- **Status**: `Published`
+
 ### Category
 Security
 
@@ -2008,6 +2238,9 @@ Dependencies: None
 ---
 
 ## #100: Enforce allowed MIME types on attachment metadata
+
+- **GitHub Issue**: [#105](https://github.com/iam-mercy/kora-app/issues/105)
+- **Status**: `Published`
 
 ### Category
 Security
@@ -2049,6 +2282,9 @@ Dependencies: None
 
 ## #101: Enforce privacy level access controls on `get_attachments`
 
+- **GitHub Issue**: [#106](https://github.com/iam-mercy/kora-app/issues/106)
+- **Status**: `Published`
+
 ### Category
 Access Control
 
@@ -2089,6 +2325,9 @@ Dependencies: Depends on #12
 
 ## #102: Enforce pet storage quota consumption on attachment additions
 
+- **GitHub Issue**: [#107](https://github.com/iam-mercy/kora-app/issues/107)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -2128,6 +2367,9 @@ Dependencies: Depends on #10
 ---
 
 ## #103: Record transfer reason and animal condition in custody chain entries
+
+- **GitHub Issue**: [#108](https://github.com/iam-mercy/kora-app/issues/108)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -2173,6 +2415,9 @@ Dependencies: None
 
 ## #104: Fix same-ledger timestamp validation bug in `verify_custody_chain`
 
+- **GitHub Issue**: [#109](https://github.com/iam-mercy/kora-app/issues/109)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -2211,6 +2456,9 @@ Dependencies: None
 ---
 
 ## #105: Redact previous owner wallet addresses for private pets in `get_ownership_history`
+
+- **GitHub Issue**: [#110](https://github.com/iam-mercy/kora-app/issues/110)
+- **Status**: `Published`
 
 ### Category
 Access Control
@@ -2251,6 +2499,9 @@ Dependencies: Depends on #12
 
 ## #106: Log custody entry on `finalize_transfer` in `pet-transfer-adoption`
 
+- **GitHub Issue**: [#111](https://github.com/iam-mercy/kora-app/issues/111)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -2289,6 +2540,9 @@ Dependencies: Depends on #6, #7
 ---
 
 ## #107: Make `batch_initiate_transfer` all-or-nothing atomic across pet batches
+
+- **GitHub Issue**: [#112](https://github.com/iam-mercy/kora-app/issues/112)
+- **Status**: `Published`
 
 ### Category
 Smart Contract
@@ -2331,6 +2585,9 @@ Dependencies: Depends on #6, #7
 
 ## #108: Prevent duplicate emergency responder address registrations
 
+- **GitHub Issue**: [#113](https://github.com/iam-mercy/kora-app/issues/113)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -2372,6 +2629,9 @@ Dependencies: None
 
 ## #109: Verify responder existence before deletion in `remove_emergency_responder`
 
+- **GitHub Issue**: [#114](https://github.com/iam-mercy/kora-app/issues/114)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -2411,6 +2671,9 @@ Dependencies: None
 ---
 
 ## #110: Validate index bounds in `reorder_contact` to prevent VM panics
+
+- **GitHub Issue**: [#115](https://github.com/iam-mercy/kora-app/issues/115)
+- **Status**: `Published`
 
 ### Category
 Smart Contract
@@ -2452,6 +2715,9 @@ Dependencies: None
 
 ## #111: Add pagination support to `get_emergency_access_logs`
 
+- **GitHub Issue**: [#116](https://github.com/iam-mercy/kora-app/issues/116)
+- **Status**: `Published`
+
 ### Category
 Performance
 
@@ -2490,6 +2756,9 @@ Dependencies: None
 ---
 
 ## #112: Standardize emergency notification rate limits to timestamp-based windows
+
+- **GitHub Issue**: [#117](https://github.com/iam-mercy/kora-app/issues/117)
+- **Status**: `Published`
 
 ### Category
 Smart Contract
@@ -2531,6 +2800,9 @@ Dependencies: None
 
 ## #113: Prevent registering the same offspring pet ID to multiple litters
 
+- **GitHub Issue**: [#118](https://github.com/iam-mercy/kora-app/issues/118)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -2570,6 +2842,9 @@ Dependencies: None
 ---
 
 ## #114: Replace manipulable timestamp pseudo-randomness in `compute_offspring_traits`
+
+- **GitHub Issue**: [#119](https://github.com/iam-mercy/kora-app/issues/119)
+- **Status**: `Published`
 
 ### Category
 Security
@@ -2611,6 +2886,9 @@ Dependencies: None
 
 ## #115: Cap cumulative basis points in `get_trait_probability` to 10,000 bps
 
+- **GitHub Issue**: [#120](https://github.com/iam-mercy/kora-app/issues/120)
+- **Status**: `Published`
+
 ### Category
 Data Integrity
 
@@ -2649,6 +2927,9 @@ Dependencies: None
 ---
 
 ## #116: Verify active and non-archived status of breeding pairs in `register_breeding_pair`
+
+- **GitHub Issue**: [#121](https://github.com/iam-mercy/kora-app/issues/121)
+- **Status**: `Published`
 
 ### Category
 Data Integrity
@@ -2690,6 +2971,9 @@ Dependencies: None
 
 ## #117: Enforce administrator authorization on `add_breed_metadata`
 
+- **GitHub Issue**: [#122](https://github.com/iam-mercy/kora-app/issues/122)
+- **Status**: `Published`
+
 ### Category
 Access Control
 
@@ -2728,6 +3012,9 @@ Dependencies: None
 ---
 
 ## #118: Validate pet existence in `deactivatePet` and `reactivatePet` in `KoraRegistry.sol`
+
+- **GitHub Issue**: [#123](https://github.com/iam-mercy/kora-app/issues/123)
+- **Status**: `Published`
 
 ### Category
 Celo/Solidity
@@ -2770,6 +3057,9 @@ Dependencies: None
 
 ## #119: Prevent orphan medical records by verifying pet existence in `addMedicalRecord` in `KoraRegistry.sol`
 
+- **GitHub Issue**: [#124](https://github.com/iam-mercy/kora-app/issues/124)
+- **Status**: `Published`
+
 ### Category
 Celo/Solidity
 
@@ -2811,6 +3101,9 @@ Dependencies: None
 
 ## #120: Bound loop iterations in `getPetRecordsByDateRange` to prevent out-of-gas reverts
 
+- **GitHub Issue**: [#125](https://github.com/iam-mercy/kora-app/issues/125)
+- **Status**: `Published`
+
 ### Category
 Celo/Solidity
 
@@ -2850,6 +3143,9 @@ Dependencies: None
 ---
 
 ## #121: Enforce maximum string length validation on license and specialization in `registerVet` in `KoraRegistry.sol`
+
+- **GitHub Issue**: [#126](https://github.com/iam-mercy/kora-app/issues/126)
+- **Status**: `Published`
 
 ### Category
 Celo/Solidity
@@ -2891,6 +3187,9 @@ Dependencies: None
 
 ## #122: Prevent concurrent signing of duplicate adoption applications in `pet-transfer-adoption`
 
+- **GitHub Issue**: [#127](https://github.com/iam-mercy/kora-app/issues/127)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -2929,6 +3228,9 @@ Dependencies: Depends on #6, #7
 ---
 
 ## #123: Enforce administrator authentication in `waive_waiting_period` in `pet-transfer-adoption`
+
+- **GitHub Issue**: [#128](https://github.com/iam-mercy/kora-app/issues/128)
+- **Status**: `Published`
 
 ### Category
 Access Control
@@ -2970,6 +3272,9 @@ Dependencies: Depends on #6, #7
 
 ## #124: Enforce non-zero timeout duration in `initiate_transfer_with_timeout` in `pet-transfer-adoption`
 
+- **GitHub Issue**: [#129](https://github.com/iam-mercy/kora-app/issues/129)
+- **Status**: `Published`
+
 ### Category
 Smart Contract
 
@@ -3009,6 +3314,9 @@ Dependencies: Depends on #6, #7
 ---
 
 ## #125: Prevent reclaim of already accepted or finalized transfers in `reclaim_transfer` in `pet-transfer-adoption`
+
+- **GitHub Issue**: [#130](https://github.com/iam-mercy/kora-app/issues/130)
+- **Status**: `Published`
 
 ### Category
 Security
