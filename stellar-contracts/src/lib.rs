@@ -209,7 +209,7 @@ const MAX_SEARCH_NOTES_LEN: u32 = 512;
 const MAX_LINEAGE_DEPTH: u32 = 16;
 const MAX_LOG_ENTRIES: u32 = 1_000;
 const MAX_ACTIVE_SUBSCRIPTIONS_PER_ADDRESS: u32 = 10;
-const MAX_BATCH_ERROR_MESSAGES: usize = 50;
+const MAX_BATCH_ERROR_MESSAGES: usize = 128;
 /// Maximum number of attachments allowed on a single medical record.
 ///
 /// Each attachment consumes a ledger entry, so an unbounded count would let an
@@ -291,17 +291,6 @@ pub struct PetAge {
 }
 
 #[contracterror]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
-pub enum KoraError {
-    NonceReused = 1,
-    SelfLineage = 2,
-    CircularLineage = 3,
-    KeywordTooLong = 4,
-    TooManySearchTokens = 5,
-}
-
-#[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum ContractError {
@@ -356,6 +345,11 @@ pub enum ContractError {
     NoPreviousUpgrade = 41,
     QuorumNotMet = 45,
     RateLimitExceeded = 46,
+    NonceReused = 164,
+    SelfLineage = 165,
+    CircularLineage = 166,
+    KeywordTooLong = 167,
+    TooManySearchTokens = 168,
 }
 
 // --- MULTI-LANGUAGE ERROR REGISTRY (Issue #684) ---
@@ -1057,6 +1051,7 @@ pub struct PetTag {
 #[contracttype]
 pub enum DataKey {
     Pet(u64),
+    PendingPetTransfer(u64),
     PetCount,
     PetOwner(Address),
     OwnerPetIndex((Address, u64)),
@@ -3692,24 +3687,16 @@ impl KoraContract {
     }
 
     pub fn init_admin(env: Env, admin: Address) {
-        if env.storage().instance().has(&DataKey::Admin)
-            || env.storage().instance().has(&SystemKey::Admins)
-        {
-            panic_with_error!(&env, ContractError::AdminAlreadySet);
-        }
-        admin.require_auth();
-        env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(
-            &DataKey::ContractVersion,
-            &ContractVersion {
-                major: 1,
-                minor: 0,
-                patch: 0,
-            },
-        );
+        let mut admins = Vec::new(&env);
+        admins.push_back(admin.clone());
+        Self::initialize(env, admin, admins, 1);
     }
 
     pub fn init_multisig(env: Env, invoker: Address, admins: Vec<Address>, threshold: u32) {
+        Self::initialize(env, invoker, admins, threshold);
+    }
+
+    pub fn initialize(env: Env, invoker: Address, admins: Vec<Address>, threshold: u32) {
         if env.storage().instance().has(&DataKey::Admin)
             || env.storage().instance().has(&SystemKey::Admins)
         {
@@ -3724,10 +3711,16 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::InvokerNotInAdminList);
         }
 
-        env.storage().instance().set(&SystemKey::Admins, &admins);
-        env.storage()
-            .instance()
-            .set(&SystemKey::AdminThreshold, &threshold);
+        if admins.len() == 1 {
+            env.storage()
+                .instance()
+                .set(&DataKey::Admin, &invoker);
+        } else {
+            env.storage().instance().set(&SystemKey::Admins, &admins);
+            env.storage()
+                .instance()
+                .set(&SystemKey::AdminThreshold, &threshold);
+        }
         env.storage().instance().set(
             &DataKey::ContractVersion,
             &ContractVersion {
@@ -3736,125 +3729,6 @@ impl KoraContract {
                 patch: 0,
             },
         );
-    }
-
-    // --- THREE-PHASE BOOTSTRAP (Issue #626) ---
-
-    /// Phase 1: Propose initial admin configuration
-    pub fn propose_init(env: Env, admins: Vec<Address>, threshold: u32) {
-        // Reject if config already exists
-        if env.storage().instance().has(&DataKey::Admin)
-            || env.storage().instance().has(&SystemKey::Admins)
-        {
-            panic_with_error!(&env, ContractError::AdminAlreadySet);
-        }
-
-        // Validate threshold
-        if threshold == 0 || threshold > admins.len() {
-            panic_with_error!(&env, ContractError::InvalidThreshold);
-        }
-
-        // Clear expired pending config if exists
-        if let Some(pending) = env
-            .storage()
-            .instance()
-            .get::<SystemKey, PendingConfig>(&SystemKey::PendingConfig)
-        {
-            let current_time = env.ledger().timestamp();
-            if current_time > pending.proposed_at.saturating_add(3600) {
-                // Timeout expired, clear and allow new proposal
-                env.storage().instance().remove(&SystemKey::PendingConfig);
-            } else {
-                // Already have an active pending config
-                panic_with_error!(&env, ContractError::InvalidState);
-            }
-        }
-
-        let pending = PendingConfig {
-            admins: admins.clone(),
-            threshold,
-            confirmations: Vec::new(&env),
-            proposed_at: env.ledger().timestamp(),
-        };
-        env.storage()
-            .instance()
-            .set(&SystemKey::PendingConfig, &pending);
-    }
-
-    /// Phase 2: Confirm the pending admin configuration
-    pub fn confirm_init(env: Env, confirmer: Address) {
-        confirmer.require_auth();
-
-        if let Some(mut pending) = env
-            .storage()
-            .instance()
-            .get::<SystemKey, PendingConfig>(&SystemKey::PendingConfig)
-        {
-            let current_time = env.ledger().timestamp();
-            let timeout = pending.proposed_at.saturating_add(3600);
-
-            // Check timeout (1 hour = 3600 seconds)
-            if current_time >= timeout {
-                // Timeout expired, clear and return error
-                env.storage().instance().remove(&SystemKey::PendingConfig);
-                panic_with_error!(&env, ContractError::InvalidState);
-            }
-
-            // Check if confirmer is in proposed admins
-            if !pending.admins.contains(&confirmer) {
-                panic_with_error!(&env, ContractError::NotAnAdmin);
-            }
-
-            // Check if already confirmed
-            if pending.confirmations.contains(&confirmer) {
-                panic_with_error!(&env, ContractError::AdminAlreadyApproved);
-            }
-
-            // Add confirmation
-            pending.confirmations.push_back(confirmer);
-            env.storage()
-                .instance()
-                .set(&SystemKey::PendingConfig, &pending);
-        } else {
-            panic_with_error!(&env, ContractError::InvalidState);
-        }
-    }
-
-    /// Phase 3: Activate the admin configuration once threshold is met
-    pub fn activate_init(env: Env) {
-        if let Some(pending) = env
-            .storage()
-            .instance()
-            .get::<SystemKey, PendingConfig>(&SystemKey::PendingConfig)
-        {
-            // Check if enough confirmations
-            if pending.confirmations.len() < pending.threshold {
-                panic_with_error!(&env, ContractError::ThresholdNotMet);
-            }
-
-            // Activate configuration
-            env.storage()
-                .instance()
-                .set(&SystemKey::Admins, &pending.admins);
-            env.storage()
-                .instance()
-                .set(&SystemKey::AdminThreshold, &pending.threshold);
-
-            // Clear pending config
-            env.storage().instance().remove(&SystemKey::PendingConfig);
-
-            // Set contract version
-            env.storage().instance().set(
-                &DataKey::ContractVersion,
-                &ContractVersion {
-                    major: 1,
-                    minor: 0,
-                    patch: 0,
-                },
-            );
-        } else {
-            panic_with_error!(&env, ContractError::InvalidState);
-        }
     }
 
     pub fn get_admins(env: Env) -> Vec<Address> {
@@ -4348,99 +4222,76 @@ impl KoraContract {
         // `require_admin_auth` here as well would create a duplicate auth frame.
         let mut messages = Vec::new(&env);
 
-        // English messages
-        messages.push_back(ErrorMessage {
-            code: 1,
-            language: String::from_str(&env, "en"),
-            message: String::from_str(&env, "Unauthorized access"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 2,
-            language: String::from_str(&env, "en"),
-            message: String::from_str(&env, "Admin not initialized"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 3,
-            language: String::from_str(&env, "en"),
-            message: String::from_str(&env, "Pet not found"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 4,
-            language: String::from_str(&env, "en"),
-            message: String::from_str(&env, "Veterinarian not found"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 5,
-            language: String::from_str(&env, "en"),
-            message: String::from_str(&env, "Veterinarian not verified"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 6,
-            language: String::from_str(&env, "en"),
-            message: String::from_str(&env, "Veterinarian already registered"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 7,
-            language: String::from_str(&env, "en"),
-            message: String::from_str(&env, "License already registered"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 8,
-            language: String::from_str(&env, "en"),
-            message: String::from_str(&env, "Input string too long"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 160,
-            language: String::from_str(&env, "en"),
-            message: String::from_str(&env, "Storage quota exceeded"),
-        });
+        let defaults = [
+            (1, "Admin already approved"),
+            (2, "Admin already set"),
+            (3, "Admin not initialized"),
+            (4, "Admins not set"),
+            (5, "Batch too large"),
+            (6, "Certificate already anchored"),
+            (7, "Counter overflow"),
+            (8, "Input string too long"),
+            (9, "Invalid breed"),
+            (10, "Invalid caller nonce"),
+            (11, "Invalid certificate hash"),
+            (12, "Invalid input"),
+            (13, "Invalid IPFS hash"),
+            (14, "Invalid pet name"),
+            (15, "Invalid rating"),
+            (16, "Invalid state"),
+            (17, "Invalid threshold"),
+            (18, "Invoker not in admin list"),
+            (19, "License already registered"),
+            (20, "No admins configured"),
+            (21, "Not an admin"),
+            (22, "Not pet owner"),
+            (23, "Pet already has linked tag"),
+            (24, "Pet not found"),
+            (25, "Storage quota exceeded"),
+            (26, "Threshold not met"),
+            (27, "Too many items"),
+            (28, "Unauthorized"),
+            (29, "Vaccination not found"),
+            (30, "Vet already registered"),
+            (31, "Vet not found"),
+            (32, "Vet not verified"),
+            (33, "Veterinarian not verified"),
+            (34, "Slot already booked"),
+            (35, "Duplicate activity"),
+            (36, "Inbreeding threshold exceeded"),
+            (37, "Self breeding"),
+            (38, "Proposal already executed"),
+            (39, "Invalid nonce"),
+            (40, "Rollback window expired"),
+            (41, "No previous upgrade"),
+            (43, "Proposal expired"),
+            (44, "Proposal not approved"),
+            (45, "Quorum not met"),
+            (46, "Rate limit exceeded"),
+            (80, "Proposal not found"),
+            (160, "Already deleted"),
+            (161, "Record already deleted"),
+            (162, "Retention period not met"),
+            (163, "Record not found"),
+            (164, "Nonce reused"),
+            (165, "Self lineage"),
+            (166, "Circular lineage"),
+            (167, "Keyword too long"),
+            (168, "Too many search tokens"),
+        ];
 
-        // Spanish messages
-        messages.push_back(ErrorMessage {
-            code: 1,
-            language: String::from_str(&env, "es"),
-            message: String::from_str(&env, "Acceso no autorizado"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 2,
-            language: String::from_str(&env, "es"),
-            message: String::from_str(&env, "Administrador no inicializado"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 3,
-            language: String::from_str(&env, "es"),
-            message: String::from_str(&env, "Mascota no encontrada"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 4,
-            language: String::from_str(&env, "es"),
-            message: String::from_str(&env, "Veterinario no encontrado"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 5,
-            language: String::from_str(&env, "es"),
-            message: String::from_str(&env, "Veterinario no verificado"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 6,
-            language: String::from_str(&env, "es"),
-            message: String::from_str(&env, "Veterinario ya registrado"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 7,
-            language: String::from_str(&env, "es"),
-            message: String::from_str(&env, "Licencia ya registrada"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 8,
-            language: String::from_str(&env, "es"),
-            message: String::from_str(&env, "Cadena de entrada demasiado larga"),
-        });
-        messages.push_back(ErrorMessage {
-            code: 160,
-            language: String::from_str(&env, "es"),
-            message: String::from_str(&env, "Cuota de almacenamiento excedida"),
-        });
+        for (code, message) in defaults.iter() {
+            messages.push_back(ErrorMessage {
+                code: *code,
+                language: String::from_str(&env, "en"),
+                message: String::from_str(&env, message),
+            });
+            messages.push_back(ErrorMessage {
+                code: *code,
+                language: String::from_str(&env, "es"),
+                message: String::from_str(&env, message),
+            });
+        }
 
         Self::batch_set_error_messages(env, admin, messages);
     }
@@ -5089,7 +4940,7 @@ impl KoraContract {
 
     pub fn get_pet_age(env: Env, pet_id: u64) -> (u64, u64) {
         if let Some(pet) =
-            KoraContract::get_pet(env.clone(), pet_id, env.current_contract_address())
+            KoraContract::get_pet(env.clone(), pet_id, env.invoker())
         {
             let current_time = env.ledger().timestamp();
             let birthday_timestamp = match KoraContract::parse_birthday_timestamp(&pet.birthday)
@@ -5739,6 +5590,9 @@ impl KoraContract {
             Self::consume_caller_nonce(&env, &owner, nonce);
             pet.new_owner = to;
             pet.updated_at = env.ledger().timestamp();
+            env.storage()
+                .instance()
+                .set(&DataKey::PendingPetTransfer(id), &pet.new_owner);
             env.storage().instance().set(&DataKey::Pet(id), &pet);
         }
     }
@@ -5957,14 +5811,23 @@ impl KoraContract {
             .instance()
             .get::<DataKey, Pet>(&DataKey::Pet(id))
         {
-            pet.new_owner.require_auth();
+            let new_owner: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::PendingPetTransfer(id))
+                .unwrap_or_else(|| env.panic_with_error(ContractError::InvalidState));
+            new_owner.require_auth();
 
             let old_owner = pet.owner.clone();
             KoraContract::remove_pet_from_owner_index(&env, &old_owner, id);
 
-            pet.owner = pet.new_owner.clone();
+            pet.owner = new_owner.clone();
+            pet.new_owner = new_owner;
             pet.updated_at = env.ledger().timestamp();
 
+            env.storage()
+                .instance()
+                .remove(&DataKey::PendingPetTransfer(id));
             KoraContract::add_pet_to_owner_index(&env, &pet.owner, id);
 
             env.storage().instance().set(&DataKey::Pet(id), &pet);
@@ -5996,6 +5859,32 @@ impl KoraContract {
                 },
             );
         }
+    }
+
+    pub fn cancel_pet_transfer(env: Env, id: u64) {
+        let pet = env
+            .storage()
+            .instance()
+            .get::<DataKey, Pet>(&DataKey::Pet(id))
+            .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
+        pet.owner.require_auth();
+
+        if env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::PendingPetTransfer(id))
+            .is_none()
+        {
+            env.panic_with_error(ContractError::InvalidState);
+        }
+
+        env.storage()
+            .instance()
+            .remove(&DataKey::PendingPetTransfer(id));
+        env.events().publish(
+            (String::from_str(&env, "PetTransferCancelled"), id),
+            id,
+        );
     }
 
     // --- HELPER FOR INDEX MAINTENANCE ---
@@ -8139,7 +8028,33 @@ impl KoraContract {
             if !tag.is_active {
                 return None;
             }
-            KoraContract::get_pet(env.clone(), tag.pet_id, env.current_contract_address())
+
+            if let Some(profile) = KoraContract::get_pet(env.clone(), tag.pet_id, env.invoker()) {
+                return Some(profile);
+            }
+
+            let pet = env
+                .storage()
+                .instance()
+                .get::<DataKey, Pet>(&DataKey::Pet(tag.pet_id))?;
+            Some(PetProfile {
+                id: pet.id,
+                owner: tag.owner,
+                privacy_level: pet.privacy_level,
+                name: String::from_str(&env, ""),
+                birthday: String::from_str(&env, ""),
+                active: pet.active,
+                created_at: pet.created_at,
+                updated_at: pet.updated_at,
+                new_owner: pet.new_owner,
+                species: pet.species,
+                gender: pet.gender,
+                breed: String::from_str(&env, ""),
+                color: String::from_str(&env, ""),
+                weight: 0,
+                microchip_id: None,
+                allergies: Vec::new(&env),
+            })
         } else {
             None
         }
@@ -10345,7 +10260,7 @@ impl KoraContract {
 
     pub fn get_pet_age_with_lifespan(env: Env, pet_id: u64) -> PetAge {
         if let Some(pet) =
-            KoraContract::get_pet(env.clone(), pet_id, env.current_contract_address())
+            KoraContract::get_pet(env.clone(), pet_id, env.invoker())
         {
             let current_time = env.ledger().timestamp();
             let birthday_timestamp = match KoraContract::parse_birthday_timestamp(&pet.birthday)
@@ -11894,7 +11809,7 @@ impl KoraContract {
 
     pub fn search_by_keyword(env: Env, pet_id: u64, keyword: String) -> Vec<MedicalRecord> {
         if keyword.len() > crate::MAX_SEARCH_KEYWORD_LEN {
-            panic_with_error!(&env, KoraError::KeywordTooLong);
+            panic_with_error!(&env, ContractError::KeywordTooLong);
         }
         let count: u64 = env.storage().instance().get::<MedicalKey, u64>(&MedicalKey::PetMedicalRecordCount(pet_id)).unwrap_or(0);
         let mut results = Vec::new(&env);
