@@ -90,6 +90,8 @@ pub enum ActivityKey {
 
     // Idempotency tracking (Issue #685)
     ActivityIdempotencyKey(Bytes), // hash(pet_id, activity_type, start_ts) -> timestamp
+    ActivityIdempotencyKeyCount,
+    ActivityIdempotencyKeyIndex(u64),
     IdempotencyWindow,             // Configurable time window in seconds (default 60)
 }
 
@@ -9146,6 +9148,7 @@ impl KoraContract {
         caller: Address,
         reason_code: u32,
     ) -> EmergencyInfo {
+        caller.require_auth();
         if let Some(pet) = env
             .storage()
             .instance()
@@ -9334,6 +9337,8 @@ impl KoraContract {
     pub fn notify_emergency_contacts(env: Env, caller: Address, pet_id: u64) -> u32 {
         const MAX_NOTIFICATIONS_PER_WINDOW: u32 = 3;
         const RATE_LIMIT_WINDOW_SECONDS: u64 = 3_600;
+
+        caller.require_auth();
 
         let pet: Pet = env
             .storage()
@@ -10756,7 +10761,7 @@ impl KoraContract {
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::PetNotFound));
 
         let now = env.ledger().timestamp();
-        let _window: u64 = env
+        let window: u64 = env
             .storage()
             .instance()
             .get(&ActivityKey::IdempotencyWindow)
@@ -10774,9 +10779,10 @@ impl KoraContract {
         let idem_key = ActivityKey::ActivityIdempotencyKey(Bytes::from_array(&env, &key_bytes));
 
         // Check if key exists and is not expired
+        let mut key_is_registered = false;
         if let Some(submitted_at) = env.storage().instance().get::<ActivityKey, u64>(&idem_key) {
-            let ttl: u64 = 86400; // 24 hours TTL
-            let expiry = submitted_at.saturating_add(ttl);
+            key_is_registered = true;
+            let expiry = submitted_at.saturating_add(window);
             if now < expiry {
                 panic_with_error!(&env, ContractError::DuplicateActivity);
             }
@@ -10784,6 +10790,21 @@ impl KoraContract {
 
         // Store idempotency key with current timestamp
         env.storage().instance().set(&idem_key, &now);
+        if !key_is_registered {
+            let key_count: u64 = env
+                .storage()
+                .instance()
+                .get(&ActivityKey::ActivityIdempotencyKeyCount)
+                .unwrap_or(0);
+            let next_key_index = safe_increment(key_count);
+            env.storage().instance().set(
+                &ActivityKey::ActivityIdempotencyKeyIndex(next_key_index),
+                &Bytes::from_array(&env, &key_bytes),
+            );
+            env.storage()
+                .instance()
+                .set(&ActivityKey::ActivityIdempotencyKeyCount, &next_key_index);
+        }
 
         // Allocate new activity ID
         let activity_count: u64 = env
@@ -10967,9 +10988,56 @@ impl KoraContract {
         if !Self::is_admin_address(&env, &admin) {
             panic_with_error!(&env, ContractError::NotAnAdmin);
         }
-        let _now = env.ledger().timestamp();
-        let _ttl: u64 = 86400;
-        0u32
+        let now = env.ledger().timestamp();
+        let window: u64 = env
+            .storage()
+            .instance()
+            .get(&ActivityKey::IdempotencyWindow)
+            .unwrap_or(60);
+        let key_count: u64 = env
+            .storage()
+            .instance()
+            .get(&ActivityKey::ActivityIdempotencyKeyCount)
+            .unwrap_or(0);
+        let mut active_keys = Vec::new(&env);
+        let mut purged = 0u32;
+
+        for index in 1..=key_count {
+            let index_key = ActivityKey::ActivityIdempotencyKeyIndex(index);
+            if let Some(key_bytes) = env
+                .storage()
+                .instance()
+                .get::<ActivityKey, Bytes>(&index_key)
+            {
+                let idem_key = ActivityKey::ActivityIdempotencyKey(key_bytes.clone());
+                let expired = env
+                    .storage()
+                    .instance()
+                    .get::<ActivityKey, u64>(&idem_key)
+                    .map(|submitted_at| now >= submitted_at.saturating_add(window))
+                    .unwrap_or(false);
+                if expired {
+                    env.storage().instance().remove(&idem_key);
+                    purged = purged.saturating_add(1);
+                } else {
+                    active_keys.push_back(key_bytes);
+                }
+                env.storage().instance().remove(&index_key);
+            }
+        }
+
+        for (offset, key_bytes) in active_keys.iter().enumerate() {
+            let index = (offset as u64).saturating_add(1);
+            env.storage().instance().set(
+                &ActivityKey::ActivityIdempotencyKeyIndex(index),
+                key_bytes,
+            );
+        }
+        let active_count = active_keys.len() as u64;
+        env.storage()
+            .instance()
+            .set(&ActivityKey::ActivityIdempotencyKeyCount, &active_count);
+        purged
     }
 
     // ── BREEDING RECORD MANAGEMENT ──────────────────────────────────
@@ -10981,6 +11049,24 @@ impl KoraContract {
         breeding_date: u64,
         notes: String,
     ) -> u64 {
+        let sire: Pet = env
+            .storage()
+            .instance()
+            .get(&DataKey::Pet(sire_id))
+            .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
+        let dam: Pet = env
+            .storage()
+            .instance()
+            .get(&DataKey::Pet(dam_id))
+            .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
+        if sire.species != dam.species
+            || sire.gender != Gender::Male
+            || dam.gender != Gender::Female
+        {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+        sire.owner.require_auth();
+
         let count = env
             .storage()
             .persistent()
@@ -10994,7 +11080,7 @@ impl KoraContract {
             dam_id,
             breeding_date,
             offspring_count: 0,
-            breeder: env.current_contract_address(),
+            breeder: sire.owner,
             notes,
         };
 
@@ -11220,6 +11306,7 @@ impl KoraContract {
     /// Build a Map of ancestor_id → shortest depth (generations up).
     fn build_pedigree_map(env: &Env, root: u64, max_depth: u32) -> Map<u64, u32> {
         let mut out = Map::new(env);
+        out.set(root, 0);
         let mut frontier = Vec::new(env);
         frontier.push_back(root);
 
