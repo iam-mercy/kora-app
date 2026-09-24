@@ -15,6 +15,11 @@
 // ---------------------------------------------------------------------------
 pub const EVENT_SCHEMA_VERSION: u32 = 1;
 
+pub const INSTANCE_BUMP_AMOUNT: u32 = 51_840;
+pub const INSTANCE_LIFETIME_THRESHOLD: u32 = 17_280;
+pub const PERSISTENT_BUMP_AMOUNT: u32 = 51_840;
+pub const PERSISTENT_LIFETIME_THRESHOLD: u32 = 17_280;
+
 /// Canonical enum for off-chain indexers to identify the active event schema.
 /// Bump the variant and `EVENT_SCHEMA_VERSION` together whenever fields change.
 #[contracttype]
@@ -2467,6 +2472,68 @@ pub struct KoraContract;
 // stable, so the deprecation lint is silenced here deliberately.
 #[allow(deprecated)]
 impl KoraContract {
+    fn bump_instance_ttl(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+    }
+
+    fn load_pet(env: &Env, pet_id: u64) -> Option<Pet> {
+        let key = DataKey::Pet(pet_id);
+        if let Some(pet) = env.storage().persistent().get(&key) {
+            env.storage().persistent().extend_ttl(
+                &key,
+                PERSISTENT_LIFETIME_THRESHOLD,
+                PERSISTENT_BUMP_AMOUNT,
+            );
+            return Some(pet);
+        }
+        env.storage().instance().get(&key)
+    }
+
+    fn store_pet(env: &Env, pet_id: u64, pet: &Pet) {
+        let key = DataKey::Pet(pet_id);
+        env.storage().persistent().set(&key, pet);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+    }
+
+    fn load_medical_record(env: &Env, record_id: u64) -> Option<MedicalRecord> {
+        let key = MedicalKey::MedicalRecord(record_id);
+        if let Some(record) = env.storage().persistent().get(&key) {
+            env.storage().persistent().extend_ttl(
+                &key,
+                PERSISTENT_LIFETIME_THRESHOLD,
+                PERSISTENT_BUMP_AMOUNT,
+            );
+            return Some(record);
+        }
+        env.storage().instance().get(&key)
+    }
+
+    fn store_medical_record(env: &Env, record_id: u64, record: &MedicalRecord) {
+        let key = MedicalKey::MedicalRecord(record_id);
+        env.storage().persistent().set(&key, record);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+    }
+
+    pub fn maintain_storage(env: Env, pet_ids: Vec<u64>, medical_record_ids: Vec<u64>) {
+        Self::bump_instance_ttl(&env);
+        for pet_id in pet_ids.iter() {
+            let _ = Self::load_pet(&env, pet_id);
+        }
+        for record_id in medical_record_ids.iter() {
+            let _ = Self::load_medical_record(&env, record_id);
+        }
+    }
+
     // --- CONTRACT STATISTICS ---
 
     pub fn register_subscription(
@@ -2800,11 +2867,7 @@ impl KoraContract {
     }
 
     pub fn get_medical_record(env: Env, record_id: u64) -> Option<MedicalRecord> {
-        if let Some(record) = env
-            .storage()
-            .instance()
-            .get::<MedicalKey, MedicalRecord>(&MedicalKey::MedicalRecord(record_id))
-        {
+        if let Some(record) = Self::load_medical_record(&env, record_id) {
             if record.deleted_at.is_none() {
                 return Some(record);
             }
@@ -2813,9 +2876,7 @@ impl KoraContract {
     }
 
     fn get_medical_record_raw(env: Env, record_id: u64) -> Option<MedicalRecord> {
-        env.storage()
-            .instance()
-            .get::<MedicalKey, MedicalRecord>(&MedicalKey::MedicalRecord(record_id))
+        Self::load_medical_record(&env, record_id)
     }
 
     fn get_lab_result(env: Env, lab_id: u64) -> Option<LabResult> {
@@ -4203,7 +4264,7 @@ impl KoraContract {
         Self::require_admin_auth(&env, &admin);
 
         // Verify pet exists
-        if !env.storage().instance().has(&DataKey::Pet(pet_id)) {
+        if Self::load_pet(&env, pet_id).is_none() {
             panic_with_error!(&env, ContractError::PetNotFound);
         }
 
@@ -4219,7 +4280,7 @@ impl KoraContract {
     /// Get storage usage information for a pet
     pub fn get_storage_usage(env: Env, pet_id: u64) -> StorageUsage {
         // Verify pet exists
-        if !env.storage().instance().has(&DataKey::Pet(pet_id)) {
+        if Self::load_pet(&env, pet_id).is_none() {
             panic_with_error!(&env, ContractError::PetNotFound);
         }
 
@@ -4641,6 +4702,7 @@ impl KoraContract {
         privacy_level: PrivacyLevel,
     ) -> u64 {
         owner.require_auth();
+        Self::bump_instance_ttl(&env);
         let birthday_ts = match KoraContract::parse_birthday_timestamp(&birthday) {
             Ok(ts) => ts,
             Err(err) => env.panic_with_error(err),
@@ -4754,7 +4816,7 @@ impl KoraContract {
             photo_hashes: Vec::new(&env),
         };
 
-        env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+        Self::store_pet(&env, pet_id, &pet);
         env.storage().instance().set(&DataKey::PetCount, &pet_id);
 
         KoraContract::log_ownership_change(
@@ -4837,11 +4899,7 @@ impl KoraContract {
         microchip_id: Option<String>,
         privacy_level: PrivacyLevel,
     ) -> bool {
-        if let Some(mut pet) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Pet>(&DataKey::Pet(id))
-        {
+        if let Some(mut pet) = Self::load_pet(&env, id) {
             pet.owner.require_auth();
             if let Err(err) = KoraContract::parse_birthday_timestamp(&birthday) {
                 env.panic_with_error(err);
@@ -4881,7 +4939,7 @@ impl KoraContract {
             pet.microchip_id = microchip_id;
             pet.updated_at = env.ledger().timestamp();
 
-            env.storage().instance().set(&DataKey::Pet(id), &pet);
+            Self::store_pet(&env, id, &pet);
             KoraContract::log_access(
                 &env,
                 id,
@@ -4911,15 +4969,11 @@ impl KoraContract {
     }
 
     pub fn update_pet_privacy_level(env: Env, pet_id: u64, privacy_level: PrivacyLevel) -> bool {
-        if let Some(mut pet) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
-        {
+        if let Some(mut pet) = Self::load_pet(&env, pet_id) {
             pet.owner.require_auth();
             pet.privacy_level = privacy_level;
             pet.updated_at = env.ledger().timestamp();
-            env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+            Self::store_pet(&env, pet_id, &pet);
             true
         } else {
             false
@@ -4927,11 +4981,8 @@ impl KoraContract {
     }
 
     pub fn get_pet(env: Env, id: u64, caller: Address) -> Option<PetProfile> {
-        if let Some(pet) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Pet>(&DataKey::Pet(id))
-        {
+        Self::bump_instance_ttl(&env);
+        if let Some(pet) = Self::load_pet(&env, id) {
             // Enforce access control based on privacy level.
             let allowed = match pet.privacy_level {
                 PrivacyLevel::Public => true,
@@ -5026,11 +5077,8 @@ impl KoraContract {
     }
 
     pub fn get_pet_data(env: Env, id: u64, caller: Address) -> Option<PetData> {
-        if let Some(pet) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Pet>(&DataKey::Pet(id))
-        {
+        Self::bump_instance_ttl(&env);
+        if let Some(pet) = Self::load_pet(&env, id) {
             let allowed = match pet.privacy_level {
                 PrivacyLevel::Public => true,
                 PrivacyLevel::Restricted => {
@@ -5542,16 +5590,12 @@ impl KoraContract {
             }
             pet.active = true;
             pet.updated_at = env.ledger().timestamp();
-            env.storage().instance().set(&DataKey::Pet(id), &pet);
+            Self::store_pet(&env, id, &pet);
         }
     }
 
     pub fn deactivate_pet(env: Env, id: u64) {
-        if let Some(mut pet) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Pet>(&DataKey::Pet(id))
-        {
+        if let Some(mut pet) = Self::load_pet(&env, id) {
             pet.owner.require_auth();
             if pet.active {
                 let active_count: u64 = env
@@ -5572,15 +5616,12 @@ impl KoraContract {
             }
             pet.active = false;
             pet.updated_at = env.ledger().timestamp();
-            env.storage().instance().set(&DataKey::Pet(id), &pet);
+            Self::store_pet(&env, id, &pet);
         }
     }
 
     pub fn archive_pet(env: Env, pet_id: u64) {
-        let mut pet: Pet = env
-            .storage()
-            .instance()
-            .get(&DataKey::Pet(pet_id))
+        let mut pet: Pet = Self::load_pet(&env, pet_id)
             .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
         pet.owner.require_auth();
         if pet.active {
@@ -5603,7 +5644,7 @@ impl KoraContract {
         pet.archived = true;
         pet.active = false;
         pet.updated_at = env.ledger().timestamp();
-        env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+        Self::store_pet(&env, pet_id, &pet);
     }
 
     pub fn unarchive_pet(env: Env, pet_id: u64) {
@@ -5615,7 +5656,7 @@ impl KoraContract {
         pet.owner.require_auth();
         pet.archived = false;
         pet.updated_at = env.ledger().timestamp();
-        env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+        Self::store_pet(&env, pet_id, &pet);
     }
 
     pub fn add_pet_photo(env: Env, pet_id: u64, photo_hash: String) -> bool {
@@ -5634,7 +5675,7 @@ impl KoraContract {
 
             pet.photo_hashes.push_back(photo_hash);
             pet.updated_at = env.ledger().timestamp();
-            env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+            Self::store_pet(&env, pet_id, &pet);
             true
         } else {
             false
@@ -5718,7 +5759,7 @@ impl KoraContract {
             if let Some(idx) = index_to_remove {
                 pet.photo_hashes.remove(idx);
                 pet.updated_at = env.ledger().timestamp();
-                env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+                Self::store_pet(&env, pet_id, &pet);
                 true
             } else {
                 false
@@ -5739,7 +5780,7 @@ impl KoraContract {
             Self::consume_caller_nonce(&env, &owner, nonce);
             pet.new_owner = to;
             pet.updated_at = env.ledger().timestamp();
-            env.storage().instance().set(&DataKey::Pet(id), &pet);
+            Self::store_pet(&env, id, &pet);
         }
     }
 
@@ -5920,7 +5961,7 @@ impl KoraContract {
             pet.updated_at = now;
 
             KoraContract::add_pet_to_owner_index(&env, &pet.owner, pet_id);
-            env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+            Self::store_pet(&env, pet_id, &pet);
 
             KoraContract::log_ownership_change(
                 &env,
@@ -5967,7 +6008,7 @@ impl KoraContract {
 
             KoraContract::add_pet_to_owner_index(&env, &pet.owner, id);
 
-            env.storage().instance().set(&DataKey::Pet(id), &pet);
+            Self::store_pet(&env, id, &pet);
 
             KoraContract::log_ownership_change(
                 &env,
@@ -7377,10 +7418,8 @@ impl KoraContract {
         restrictions: Vec<String>,
         allergies: Vec<String>,
     ) -> bool {
-        let pet: Pet = env
-            .storage()
-            .instance()
-            .get(&DataKey::Pet(pet_id))
+        Self::bump_instance_ttl(&env);
+        let pet: Pet = Self::load_pet(&env, pet_id)
             .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
 
         pet.owner.require_auth();
@@ -7407,9 +7446,13 @@ impl KoraContract {
             created_at: now,
         };
 
-        env.storage()
-            .instance()
-            .set(&NutritionKey::DietPlan(diet_id), &plan);
+        let diet_key = NutritionKey::DietPlan(diet_id);
+        env.storage().persistent().set(&diet_key, &plan);
+        env.storage().persistent().extend_ttl(
+            &diet_key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
         env.storage()
             .instance()
             .set(&NutritionKey::DietPlanCount, &diet_id);
@@ -7432,18 +7475,20 @@ impl KoraContract {
     }
 
     pub fn get_diet_plan(env: Env, diet_id: u64) -> Option<DietPlan> {
-        env.storage()
-            .instance()
-            .get(&NutritionKey::DietPlan(diet_id))
+        let key = NutritionKey::DietPlan(diet_id);
+        let plan = env.storage().persistent().get(&key);
+        if plan.is_some() {
+            env.storage().persistent().extend_ttl(
+                &key,
+                PERSISTENT_LIFETIME_THRESHOLD,
+                PERSISTENT_BUMP_AMOUNT,
+            );
+        }
+        plan.or_else(|| env.storage().instance().get(&key))
     }
 
     pub fn get_diet_history(env: Env, pet_id: u64) -> Vec<DietPlan> {
-        if env
-            .storage()
-            .instance()
-            .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
-            .is_none()
-        {
+        if Self::load_pet(&env, pet_id).is_none() {
             return Vec::new(&env);
         }
 
@@ -7664,7 +7709,7 @@ impl KoraContract {
         // Update current pet weight
         pet.weight = weight;
         pet.updated_at = now;
-        env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+        Self::store_pet(&env, pet_id, &pet);
 
         true
     }
@@ -9130,7 +9175,7 @@ impl KoraContract {
 
             pet.updated_at = env.ledger().timestamp();
 
-            env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+            Self::store_pet(&env, pet_id, &pet);
         } else {
             panic_with_error!(&env, ContractError::PetNotFound);
         }
@@ -9469,7 +9514,7 @@ impl KoraContract {
                 nonce: c_nonce,
                 ciphertext: c_cipher,
             };
-            env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+            Self::store_pet(&env, pet_id, &pet);
         }
     }
 
@@ -11477,6 +11522,7 @@ impl KoraContract {
         notes: String,
     ) -> u64 {
         vet_address.require_auth();
+        Self::bump_instance_ttl(&env);
         if !Self::is_verified_vet(env.clone(), vet_address.clone()) {
             panic!("Veterinarian not verified");
         }
@@ -11511,9 +11557,7 @@ impl KoraContract {
             deleted_at: None,
         };
 
-        env.storage()
-            .instance()
-            .set(&MedicalKey::MedicalRecord(record_id), &record);
+        Self::store_medical_record(&env, record_id, &record);
         env.storage()
             .instance()
             .set(&MedicalKey::MedicalRecordCount, &record_id);
@@ -11571,6 +11615,7 @@ impl KoraContract {
         offset: u64,
         limit: u32,
     ) -> Vec<MedicalRecord> {
+        Self::bump_instance_ttl(&env);
         let count: u64 = env
             .storage()
             .instance()
@@ -11911,10 +11956,10 @@ impl KoraContract {
     }
 
     pub fn remove_medical_record(env: Env, record_id: u64) -> bool {
-        if let Some(mut record) = env.storage().instance().get::<MedicalKey, MedicalRecord>(&MedicalKey::MedicalRecord(record_id)) {
+        if let Some(mut record) = Self::load_medical_record(&env, record_id) {
             record.vet_address.require_auth();
             record.deleted_at = Some(env.ledger().timestamp());
-            env.storage().instance().set(&MedicalKey::MedicalRecord(record_id), &record);
+            Self::store_medical_record(&env, record_id, &record);
             true
         } else {
             false
@@ -11922,11 +11967,11 @@ impl KoraContract {
     }
 
     pub fn update_medical_record_notes(env: Env, record_id: u64, notes: String) -> bool {
-        if let Some(mut record) = env.storage().instance().get::<MedicalKey, MedicalRecord>(&MedicalKey::MedicalRecord(record_id)) {
+        if let Some(mut record) = Self::load_medical_record(&env, record_id) {
             record.vet_address.require_auth();
             record.notes = notes;
             record.updated_at = env.ledger().timestamp();
-            env.storage().instance().set(&MedicalKey::MedicalRecord(record_id), &record);
+            Self::store_medical_record(&env, record_id, &record);
             true
         } else {
             false
@@ -11935,7 +11980,7 @@ impl KoraContract {
 
     pub fn amend_medical_record(env: Env, pet_id: u64, record_id: u64, input: MedicalRecordAmendmentInput) -> u32 {
         let _ = pet_id;
-        let record: MedicalRecord = env.storage().instance().get::<MedicalKey, MedicalRecord>(&MedicalKey::MedicalRecord(record_id)).unwrap_or_else(|| panic_with_error!(&env, ContractError::RecordNotFound));
+        let record: MedicalRecord = Self::load_medical_record(&env, record_id).unwrap_or_else(|| panic_with_error!(&env, ContractError::RecordNotFound));
         record.vet_address.require_auth();
         let version: u32 = env.storage().instance().get::<MedicalKey, u32>(&MedicalKey::MedicalRecordAmendmentCount(record_id)).unwrap_or(0);
         if version >= 5 { panic_with_error!(&env, ContractError::TooManyItems); }
