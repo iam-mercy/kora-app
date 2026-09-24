@@ -931,6 +931,7 @@ pub struct Vet {
     pub license_number: String,
     pub specialization: String,
     pub verified: bool,
+    pub license_expiry: u64,
     pub clinic_info: Option<String>, // Simplified to String to avoid nested Option issues
 }
 
@@ -1057,6 +1058,7 @@ pub struct PetTag {
 #[contracttype]
 pub enum DataKey {
     Pet(u64),
+    PetByMicrochip(String),
     PetCount,
     PetOwner(Address),
     OwnerPetIndex((Address, u64)),
@@ -2735,7 +2737,7 @@ impl KoraContract {
         medications
     }
 
-    fn get_pet_insurance(env: Env, pet_id: u64) -> Option<InsurancePolicy> {
+    pub fn get_pet_insurance(env: Env, pet_id: u64) -> Option<InsurancePolicy> {
         let count = env
             .storage()
             .instance()
@@ -2749,12 +2751,298 @@ impl KoraContract {
                     pet_id, index,
                 )))
             {
-                if policy.active {
+                if policy.active && policy.expiry_date >= env.ledger().timestamp() {
                     return Some(policy);
                 }
             }
         }
         None
+    }
+
+    pub fn get_all_pet_policies(env: Env, pet_id: u64) -> Vec<InsurancePolicy> {
+        let count = env
+            .storage()
+            .instance()
+            .get::<InsuranceKey, u64>(&InsuranceKey::PetPolicyCount(pet_id))
+            .unwrap_or(0);
+        let mut policies = Vec::new(&env);
+        for index in 1..=count {
+            if let Some(policy) = env.storage().instance().get::<InsuranceKey, InsurancePolicy>(
+                &InsuranceKey::PetPolicyIndex((pet_id, index)),
+            ) {
+                policies.push_back(policy);
+            }
+        }
+        policies
+    }
+
+    pub fn add_insurance_policy(
+        env: Env,
+        pet_id: u64,
+        policy_id: String,
+        provider: String,
+        coverage_type: String,
+        premium: u64,
+        coverage_limit: u64,
+        expiry_date: u64,
+    ) -> bool {
+        let pet = match env
+            .storage()
+            .instance()
+            .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
+        {
+            Some(pet) => pet,
+            None => return false,
+        };
+        pet.owner.require_auth();
+        if policy_id.is_empty() || expiry_date < env.ledger().timestamp() {
+            return false;
+        }
+        let tier = if coverage_type == String::from_str(&env, "Premium") {
+            PremiumTier::Premium
+        } else if coverage_type == String::from_str(&env, "Standard") {
+            PremiumTier::Standard
+        } else {
+            PremiumTier::Basic
+        };
+        let count = env
+            .storage()
+            .instance()
+            .get::<InsuranceKey, u64>(&InsuranceKey::PetPolicyCount(pet_id))
+            .unwrap_or(0);
+        let next = match count.checked_add(1) {
+            Some(next) => next,
+            None => panic_with_error!(&env, ContractError::CounterOverflow),
+        };
+        let policy = InsurancePolicy {
+            policy_id: policy_id.clone(),
+            provider,
+            coverage_type,
+            tier,
+            premium,
+            coverage_limit,
+            start_date: env.ledger().timestamp(),
+            expiry_date,
+            active: true,
+        };
+        env.storage().instance().set(
+            &InsuranceKey::PetPolicyIndex((pet_id, next)),
+            &policy,
+        );
+        env.storage()
+            .instance()
+            .set(&InsuranceKey::PetPolicyCount(pet_id), &next);
+        env.events().publish(
+            (String::from_str(&env, "InsuranceAdded"), pet_id),
+            InsuranceAddedEvent {
+                version: EVENT_SCHEMA_VERSION,
+                pet_id,
+                policy_id,
+                provider: policy.provider.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+        true
+    }
+
+    pub fn update_insurance_status(
+        env: Env,
+        owner: Address,
+        pet_id: u64,
+        policy_id: String,
+        active: bool,
+    ) -> bool {
+        owner.require_auth();
+        let pet = match env
+            .storage()
+            .instance()
+            .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
+        {
+            Some(pet) => pet,
+            None => return false,
+        };
+        if pet.owner != owner {
+            panic_with_error!(&env, ContractError::NotPetOwner);
+        }
+        let count = env
+            .storage()
+            .instance()
+            .get::<InsuranceKey, u64>(&InsuranceKey::PetPolicyCount(pet_id))
+            .unwrap_or(0);
+        for index in 1..=count {
+            let key = InsuranceKey::PetPolicyIndex((pet_id, index));
+            if let Some(mut policy) = env.storage().instance().get::<InsuranceKey, InsurancePolicy>(&key) {
+                if policy.policy_id == policy_id {
+                    policy.active = active;
+                    env.storage().instance().set(&key, &policy);
+                    env.events().publish(
+                        (String::from_str(&env, "InsuranceUpdated"), pet_id),
+                        InsuranceUpdatedEvent {
+                            version: EVENT_SCHEMA_VERSION,
+                            pet_id,
+                            policy_id,
+                            active,
+                            timestamp: env.ledger().timestamp(),
+                        },
+                    );
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn get_premium_estimate(env: Env, pet_id: u64, tier: PremiumTier) -> u64 {
+        let base = Self::get_pet_insurance(env, pet_id)
+            .map(|policy| policy.premium)
+            .unwrap_or(1000);
+        match tier {
+            PremiumTier::Basic => base,
+            PremiumTier::Standard => base.saturating_mul(2),
+            PremiumTier::Premium => base.saturating_mul(3),
+        }
+    }
+
+    pub fn submit_insurance_claim(
+        env: Env,
+        pet_id: u64,
+        amount: u64,
+        description: String,
+    ) -> Option<u64> {
+        let pet = env
+            .storage()
+            .instance()
+            .get::<DataKey, Pet>(&DataKey::Pet(pet_id))?;
+        pet.owner.require_auth();
+        let policy = Self::get_pet_insurance(env.clone(), pet_id)?;
+        let now = env.ledger().timestamp();
+        if !policy.active || policy.expiry_date < now || amount > policy.coverage_limit {
+            return None;
+        }
+        let count = env
+            .storage()
+            .instance()
+            .get::<InsuranceKey, u64>(&InsuranceKey::ClaimCount)
+            .unwrap_or(0);
+        let claim_id = count.checked_add(1)?;
+        let claim = InsuranceClaim {
+            claim_id,
+            pet_id,
+            policy_id: policy.policy_id.clone(),
+            amount,
+            date: now,
+            status: InsuranceClaimStatus::Pending,
+            description,
+            flagged: false,
+            fraud_flags: 0,
+            documents: Vec::new(&env),
+            rejected_at: None,
+            appeal_reason: None,
+            appeal_evidence_cids: Vec::new(&env),
+            appealed_at: None,
+            original_reviewer: None,
+            appeal_reviewer: None,
+        };
+        env.storage().instance().set(&InsuranceKey::Claim(claim_id), &claim);
+        env.storage().instance().set(&InsuranceKey::ClaimCount, &claim_id);
+        let pet_count = env
+            .storage()
+            .instance()
+            .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimCount(pet_id))
+            .unwrap_or(0);
+        let next_pet_count = pet_count.checked_add(1)?;
+        env.storage().instance().set(
+            &InsuranceKey::PetClaimIndex((pet_id, next_pet_count)),
+            &claim_id,
+        );
+        env.storage().instance().set(
+            &InsuranceKey::PetClaimCount(pet_id),
+            &next_pet_count,
+        );
+        env.events().publish(
+            (String::from_str(&env, "InsuranceClaimSubmitted"), claim_id),
+            InsuranceClaimSubmittedEvent {
+                version: EVENT_SCHEMA_VERSION,
+                claim_id,
+                pet_id,
+                policy_id,
+                amount,
+                flagged: false,
+                timestamp: now,
+            },
+        );
+        Some(claim_id)
+    }
+
+    pub fn get_insurance_claim(env: Env, claim_id: u64) -> Option<InsuranceClaim> {
+        env.storage().instance().get(&InsuranceKey::Claim(claim_id))
+    }
+
+    pub fn get_insurance_claim_count(env: Env, pet_id: u64) -> u64 {
+        env.storage()
+            .instance()
+            .get(&InsuranceKey::PetClaimCount(pet_id))
+            .unwrap_or(0)
+    }
+
+    pub fn get_claims_by_status(
+        env: Env,
+        pet_id: u64,
+        status: InsuranceClaimStatus,
+    ) -> Vec<InsuranceClaim> {
+        let count = Self::get_insurance_claim_count(env.clone(), pet_id);
+        let mut claims = Vec::new(&env);
+        for index in 1..=count {
+            if let Some(claim_id) = env
+                .storage()
+                .instance()
+                .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimIndex((pet_id, index)))
+            {
+                if let Some(claim) = Self::get_insurance_claim(env.clone(), claim_id) {
+                    if claim.status == status {
+                        claims.push_back(claim);
+                    }
+                }
+            }
+        }
+        claims
+    }
+
+    pub fn update_insurance_claim_status(
+        env: Env,
+        claim_id: u64,
+        status: InsuranceClaimStatus,
+    ) -> bool {
+        let mut claim = match Self::get_insurance_claim(env.clone(), claim_id) {
+            Some(claim) => claim,
+            None => return false,
+        };
+        let pet = match env
+            .storage()
+            .instance()
+            .get::<DataKey, Pet>(&DataKey::Pet(claim.pet_id))
+        {
+            Some(pet) => pet,
+            None => return false,
+        };
+        pet.owner.require_auth();
+        claim.status = status.clone();
+        env.storage().instance().set(&InsuranceKey::Claim(claim_id), &claim);
+        env.events().publish(
+            (String::from_str(&env, "InsuranceClaimStatusUpdated"), claim_id),
+            InsuranceClaimStatusUpdatedEvent {
+                version: EVENT_SCHEMA_VERSION,
+                claim_id,
+                pet_id: claim.pet_id,
+                status,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+        true
+    }
+
+    pub fn process_claim_payout(env: Env, claim_id: u64) -> bool {
+        Self::update_insurance_claim_status(env, claim_id, InsuranceClaimStatus::Paid)
     }
 
     fn get_active_consents(env: Env, pet_id: u64) -> Vec<Consent> {
@@ -4658,6 +4946,16 @@ impl KoraContract {
         Self::validate_pet_name(&env, &name);
         Self::validate_breed(&env, &species, &breed);
 
+        if let Some(microchip) = microchip_id.clone() {
+            if env
+                .storage()
+                .instance()
+                .has(&DataKey::PetByMicrochip(microchip))
+            {
+                panic_with_error!(&env, ContractError::InvalidInput);
+            }
+        }
+
         let pet_count: u64 = env
             .storage()
             .instance()
@@ -4756,6 +5054,11 @@ impl KoraContract {
 
         env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
         env.storage().instance().set(&DataKey::PetCount, &pet_id);
+        if let Some(microchip) = pet.microchip_id.clone() {
+            env.storage()
+                .instance()
+                .set(&DataKey::PetByMicrochip(microchip), &pet_id);
+        }
 
         KoraContract::log_ownership_change(
             &env,
@@ -4849,6 +5152,25 @@ impl KoraContract {
             Self::validate_pet_name(&env, &name);
             Self::validate_breed(&env, &species, &breed);
 
+            if microchip_id != pet.microchip_id {
+                if let Some(microchip) = microchip_id.clone() {
+                    if env
+                        .storage()
+                        .instance()
+                        .get::<DataKey, u64>(&DataKey::PetByMicrochip(microchip))
+                        .map(|pet_id| pet_id != id)
+                        .unwrap_or(false)
+                    {
+                        panic_with_error!(&env, ContractError::InvalidInput);
+                    }
+                }
+                if let Some(previous_microchip) = pet.microchip_id.clone() {
+                    env.storage()
+                        .instance()
+                        .remove(&DataKey::PetByMicrochip(previous_microchip));
+                }
+            }
+
             let key = KoraContract::get_encryption_key(&env);
 
             let name_bytes = name.to_xdr(&env);
@@ -4882,6 +5204,11 @@ impl KoraContract {
             pet.updated_at = env.ledger().timestamp();
 
             env.storage().instance().set(&DataKey::Pet(id), &pet);
+            if let Some(microchip) = pet.microchip_id.clone() {
+                env.storage()
+                    .instance()
+                    .set(&DataKey::PetByMicrochip(microchip), &id);
+            }
             KoraContract::log_access(
                 &env,
                 id,
@@ -6266,6 +6593,7 @@ impl KoraContract {
             license_number: license_number.clone(),
             specialization,
             verified: false,
+            license_expiry: 0,
             clinic_info: None,
         };
 
@@ -6312,7 +6640,7 @@ impl KoraContract {
                     .instance()
                     .get::<DataKey, Vet>(&DataKey::Vet(addr))
                 {
-                    if !vet.verified {
+                    if !vet.verified || env.ledger().timestamp() > vet.license_expiry {
                         continue;
                     }
                     if skipped < offset {
@@ -6366,6 +6694,7 @@ impl KoraContract {
             {
                 // Vet exists, verify it
                 vet.verified = true;
+                vet.license_expiry = u64::MAX;
                 env.storage()
                     .instance()
                     .set(&DataKey::Vet(vet.address.clone()), &vet);
@@ -6452,6 +6781,7 @@ impl KoraContract {
             .get::<DataKey, Vet>(&DataKey::Vet(vet_address))
         {
             vet.verified = true;
+            vet.license_expiry = u64::MAX;
             env.storage()
                 .instance()
                 .set(&DataKey::Vet(vet.address.clone()), &vet);
@@ -6494,8 +6824,14 @@ impl KoraContract {
         env.storage()
             .instance()
             .get::<DataKey, Vet>(&DataKey::Vet(vet_address))
-            .map(|vet| vet.verified)
+            .map(|vet| vet.verified && env.ledger().timestamp() <= vet.license_expiry)
             .unwrap_or(false)
+    }
+
+    pub fn get_pet_by_microchip(env: Env, microchip_id: String) -> Option<u64> {
+        env.storage()
+            .instance()
+            .get(&DataKey::PetByMicrochip(microchip_id))
     }
 
     pub fn get_vet(env: Env, vet_address: Address) -> Option<Vet> {
@@ -6508,6 +6844,57 @@ impl KoraContract {
             .instance()
             .get(&DataKey::VetLicense(license_number));
         vet_address.and_then(|address| KoraContract::get_vet(env, address))
+    }
+
+    pub fn verify_vet_with_expiry(
+        env: Env,
+        admin: Address,
+        vet_address: Address,
+        expiry_timestamp: u64,
+    ) -> bool {
+        KoraContract::require_admin_auth(&env, &admin);
+        let verified = if let Some(mut vet) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Vet>(&DataKey::Vet(vet_address))
+        {
+            vet.verified = true;
+            vet.license_expiry = expiry_timestamp;
+            env.storage()
+                .instance()
+                .set(&DataKey::Vet(vet.address.clone()), &vet);
+            true
+        } else {
+            false
+        };
+        if verified {
+            Self::record_admin_activity(&env, &admin, "verify_vet_with_expiry");
+        }
+        verified
+    }
+
+    pub fn renew_vet_license(
+        env: Env,
+        admin: Address,
+        vet_address: Address,
+        new_expiry: u64,
+    ) -> bool {
+        KoraContract::require_admin_auth(&env, &admin);
+        if let Some(mut vet) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Vet>(&DataKey::Vet(vet_address))
+        {
+            vet.license_expiry = new_expiry;
+            vet.verified = true;
+            env.storage()
+                .instance()
+                .set(&DataKey::Vet(vet.address.clone()), &vet);
+            Self::record_admin_activity(&env, &admin, "renew_vet_license");
+            true
+        } else {
+            false
+        }
     }
 
     /*
