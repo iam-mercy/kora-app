@@ -54,3 +54,24 @@ A parallel Solidity implementation (`KoraRegistry.sol`) targeting the Celo netwo
 As of this cleanup:
 
 - `cd stellar-contracts && cargo test` passes
+
+## Dual-Chain Implementation Matrix
+
+The Stellar and Celo contracts are related implementations, not feature-for-
+feature equivalents. Integrations must select behavior from the target chain.
+
+| Capability | Stellar / Soroban | Celo / EVM |
+|---|---|---|
+| Ownership transfer | Two-step flow: the current owner proposes a new owner and the recipient accepts with `accept_pet_transfer`. | One-step `transferPet(petId, to)` by the current owner; the recipient does not accept. |
+| Sensitive data | Pet sensitive fields use encrypted data with nonce and ciphertext; reads apply privacy and caller access checks. | `Pet` and `MedicalRecord` fields are Solidity strings stored directly on-chain; no field-level encryption is implemented. |
+| Medical records | Verified vets add records; caller-aware reads and privacy/access grants govern retrieval. | Verified vets add records; per-pet arrays and public view functions expose records. |
+| Administration | Supports single-admin initialization and multisig admin lists, thresholds, approvals, quorum, and proposals. | Constructor assigns one `admin`; administrative operations use `onlyAdmin`. |
+| Emergency behavior | Emergency views include caller authorization and audited access; encrypted emergency data is decrypted by the contract. | OpenZeppelin `Pausable` lets the admin halt state-changing operations; it is not an emergency data-override equivalent. |
+| Storage model | Soroban instance/persistent storage with contract types and encrypted payloads. | EVM mappings and dynamic arrays containing plaintext Solidity structs. |
+
+### Parity roadmap
+
+Feature parity would require a Celo privacy and authorization design, encrypted
+payload/key handling, grant-aware reads, a multisig governance layer, and a
+two-step transfer workflow. Until those are implemented and audited, bridges
+and clients must preserve the differences above.
