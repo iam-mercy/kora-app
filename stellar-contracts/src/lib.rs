@@ -1070,6 +1070,7 @@ pub enum DataKey {
     Admin,
     VetLicenseVerified(Address),
     VetSpecializations(Address),
+    RevokedVet(Address),
     ContractVersion,
     AccessGrant((u64, Address)),
     AccessGrantCount(u64),
@@ -2706,6 +2707,37 @@ impl KoraContract {
         }
 
         AccessLevel::None
+    }
+
+    fn has_active_dispute(env: &Env, pet_id: u64) -> bool {
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&DisputeKey::PetDisputesCount(pet_id))
+            .unwrap_or(0);
+
+        for index in 1..=count {
+            if let Some(dispute_id) = env
+                .storage()
+                .instance()
+                .get::<DisputeKey, u64>(&DisputeKey::PetDisputesIndex((pet_id, index)))
+            {
+                if let Some(dispute) = env
+                    .storage()
+                    .instance()
+                    .get::<DisputeKey, Dispute>(&DisputeKey::Dispute(dispute_id))
+                {
+                    if matches!(
+                        dispute.status,
+                        DisputeStatus::Pending | DisputeStatus::EvidencePhase
+                    ) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     fn get_active_medications(env: Env, pet_id: u64) -> Vec<Medication> {
@@ -5641,12 +5673,18 @@ impl KoraContract {
         }
     }
 
-    pub fn get_pet_photos(env: Env, pet_id: u64) -> Vec<String> {
+    pub fn get_pet_photos(env: Env, pet_id: u64, caller: Address) -> Vec<String> {
         if let Some(pet) = env
             .storage()
             .instance()
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
         {
+            let allowed = pet.privacy_level == PrivacyLevel::Public
+                || pet.owner == caller
+                || Self::check_access(env.clone(), pet_id, caller) != AccessLevel::None;
+            if !allowed {
+                panic_with_error!(&env, ContractError::Unauthorized);
+            }
             pet.photo_hashes
         } else {
             Vec::new(&env)
@@ -5669,12 +5707,24 @@ impl KoraContract {
     /// Returns a paginated slice of photo hashes for a pet.
     /// `offset` is the zero-based index of the first item to return.
     /// `limit` is the maximum number of items to return.
-    pub fn get_pet_photos_paginated(env: Env, pet_id: u64, offset: u64, limit: u32) -> Vec<String> {
+    pub fn get_pet_photos_paginated(
+        env: Env,
+        pet_id: u64,
+        caller: Address,
+        offset: u64,
+        limit: u32,
+    ) -> Vec<String> {
         if let Some(pet) = env
             .storage()
             .instance()
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
         {
+            let allowed = pet.privacy_level == PrivacyLevel::Public
+                || pet.owner == caller
+                || Self::check_access(env.clone(), pet_id, caller) != AccessLevel::None;
+            if !allowed {
+                panic_with_error!(&env, ContractError::Unauthorized);
+            }
             let total = pet.photo_hashes.len() as u64;
             let mut result = Vec::new(&env);
 
@@ -5704,6 +5754,10 @@ impl KoraContract {
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
         {
             pet.owner.require_auth();
+
+            if pet.archived || Self::has_active_dispute(&env, pet_id) {
+                panic_with_error!(&env, ContractError::InvalidState);
+            }
 
             // Find the photo in the vector
             let mut index_to_remove: Option<u32> = None;
@@ -6202,6 +6256,13 @@ impl KoraContract {
     const MAX_SEARCH_NOTES_LEN: u32 = 1000;
     #[allow(dead_code)]
     const MAX_SEARCH_TOKENS_PER_RECORD: u32 = 50;
+    const MAX_MEDICATION_NAME_LEN: u32 = 100;
+    const MAX_MEDICATION_DOSAGE_LEN: u32 = 100;
+    const MAX_MEDICATION_FREQUENCY_LEN: u32 = 100;
+    const MIN_DAILY_CALORIES: u32 = 10;
+    const MAX_DAILY_CALORIES: u32 = 20_000;
+    const MAX_NUTRITION_TEXT_LEN: u32 = 100;
+    const MAX_NUTRITION_INGREDIENTS: u32 = 50;
 
     /// Validates that `value` does not exceed `max` bytes.
     ///
@@ -6213,6 +6274,35 @@ impl KoraContract {
             return Err(ContractError::InvalidInput);
         }
         Ok(())
+    }
+
+    fn validate_medications(
+        env: &Env,
+        pet_id: u64,
+        vet: &Address,
+        medications: &Vec<Medication>,
+    ) {
+        for medication in medications.iter() {
+            if medication.pet_id != pet_id
+                || medication.prescribing_vet != *vet
+                || medication.name.is_empty()
+                || medication.dosage.is_empty()
+                || medication.frequency.is_empty()
+                || medication.end_date.is_some_and(|end| end < medication.start_date)
+            {
+                panic_with_error!(env, ContractError::InvalidInput);
+            }
+
+            for (value, max) in [
+                (&medication.name, Self::MAX_MEDICATION_NAME_LEN),
+                (&medication.dosage, Self::MAX_MEDICATION_DOSAGE_LEN),
+                (&medication.frequency, Self::MAX_MEDICATION_FREQUENCY_LEN),
+            ] {
+                if value.len() > max {
+                    panic_with_error!(env, ContractError::InputStringTooLong);
+                }
+            }
+        }
     }
 
     pub fn register_vet(
@@ -6455,6 +6545,9 @@ impl KoraContract {
             env.storage()
                 .instance()
                 .set(&DataKey::Vet(vet.address.clone()), &vet);
+            env.storage()
+                .instance()
+                .remove(&DataKey::RevokedVet(vet_address));
             true
         } else {
             false
@@ -6480,6 +6573,9 @@ impl KoraContract {
             env.storage()
                 .instance()
                 .set(&DataKey::Vet(vet.address.clone()), &vet);
+            env.storage()
+                .instance()
+                .set(&DataKey::RevokedVet(vet_address), &true);
             true
         } else {
             false
@@ -6491,11 +6587,15 @@ impl KoraContract {
     }
 
     pub fn is_verified_vet(env: Env, vet_address: Address) -> bool {
-        env.storage()
+        !env.storage()
             .instance()
-            .get::<DataKey, Vet>(&DataKey::Vet(vet_address))
-            .map(|vet| vet.verified)
-            .unwrap_or(false)
+            .has(&DataKey::RevokedVet(vet_address.clone()))
+            && env
+                .storage()
+                .instance()
+                .get::<DataKey, Vet>(&DataKey::Vet(vet_address))
+                .map(|vet| vet.verified)
+                .unwrap_or(false)
     }
 
     pub fn get_vet(env: Env, vet_address: Address) -> Option<Vet> {
@@ -7385,6 +7485,20 @@ impl KoraContract {
 
         pet.owner.require_auth();
 
+        if calories_per_serving < Self::MIN_DAILY_CALORIES
+            || calories_per_serving > Self::MAX_DAILY_CALORIES
+            || daily_target_calories < Self::MIN_DAILY_CALORIES
+            || daily_target_calories > Self::MAX_DAILY_CALORIES
+            || food_type.is_empty()
+            || portion_size.is_empty()
+            || frequency.is_empty()
+            || food_type.len() > Self::MAX_NUTRITION_TEXT_LEN
+            || portion_size.len() > Self::MAX_NUTRITION_TEXT_LEN
+            || frequency.len() > Self::MAX_NUTRITION_TEXT_LEN
+        {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
         let diet_count: u64 = env
             .storage()
             .instance()
@@ -7730,6 +7844,13 @@ impl KoraContract {
         pet.owner.require_auth();
 
         if name.is_empty() {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
+        if name.len() > Self::MAX_NUTRITION_TEXT_LEN
+            || ingredients.is_empty()
+            || ingredients.len() > Self::MAX_NUTRITION_INGREDIENTS
+        {
             panic_with_error!(&env, ContractError::InvalidInput);
         }
 
@@ -11478,8 +11599,10 @@ impl KoraContract {
     ) -> u64 {
         vet_address.require_auth();
         if !Self::is_verified_vet(env.clone(), vet_address.clone()) {
-            panic!("Veterinarian not verified");
+            panic_with_error!(&env, ContractError::VetNotVerified);
         }
+
+        Self::validate_medications(&env, pet_id, &vet_address, &medications);
 
         let _pet: Pet = env
             .storage()
