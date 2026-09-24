@@ -197,6 +197,105 @@ mod test_upgrade_proposal;
 #[cfg(test)]
 mod test_emergency_notify_rate_limit;
 
+#[cfg(test)]
+mod test_access_control;
+#[cfg(test)]
+mod test_activity;
+#[cfg(test)]
+mod test_activity_idempotency;
+#[cfg(test)]
+mod test_admin_activity_log;
+#[cfg(test)]
+mod test_admin_initialization;
+#[cfg(test)]
+mod test_admin_threshold_quorum;
+#[cfg(test)]
+mod test_attachments;
+#[cfg(test)]
+mod test_audit_ledger;
+#[cfg(test)]
+mod test_batch_read;
+#[cfg(test)]
+mod test_batch_verify_vets;
+#[cfg(test)]
+mod test_behavior;
+#[cfg(test)]
+mod test_biomarker_trend;
+#[cfg(test)]
+mod test_caller_nonce;
+#[cfg(test)]
+mod test_claim_documents;
+#[cfg(test)]
+mod test_consent_pagination;
+#[cfg(test)]
+mod test_cross_chain_identity;
+#[cfg(test)]
+mod test_custody_chain;
+#[cfg(test)]
+mod test_emergency_contacts;
+#[cfg(test)]
+mod test_emergency_override;
+#[cfg(test)]
+mod test_encryption_nonce;
+#[cfg(test)]
+mod test_event_subscriptions;
+#[cfg(test)]
+mod test_fixtures;
+#[cfg(test)]
+mod test_fuzz_regression;
+#[cfg(test)]
+mod test_get_lab_results;
+#[cfg(test)]
+mod test_get_pet_access_control;
+#[cfg(test)]
+mod test_get_pet_decryption;
+#[cfg(test)]
+mod test_governance_voting;
+#[cfg(test)]
+mod test_grooming;
+#[cfg(test)]
+mod test_health_score;
+#[cfg(test)]
+mod test_input_limits;
+#[cfg(test)]
+mod test_insurance;
+#[cfg(test)]
+mod test_insurance_appeal;
+#[cfg(test)]
+mod test_insurance_claims;
+#[cfg(test)]
+mod test_insurance_comprehensive;
+#[cfg(test)]
+mod test_ipfs;
+#[cfg(test)]
+mod test_medical_records_pagination;
+#[cfg(test)]
+mod test_multisig_transfer;
+#[cfg(test)]
+mod test_nutrition;
+#[cfg(test)]
+mod test_overflow;
+#[cfg(test)]
+mod test_pet_age;
+#[cfg(test)]
+mod test_pet_validation;
+#[cfg(test)]
+mod test_proptest_medical;
+#[cfg(test)]
+mod test_purge_deleted_records;
+#[cfg(test)]
+mod test_remove_admin;
+#[cfg(test)]
+mod test_statistics;
+#[cfg(test)]
+mod test_statistics_snapshot;
+#[cfg(test)]
+mod test_storage_quota;
+#[cfg(test)]
+mod test_vaccination_certificate;
+#[cfg(test)]
+mod test_vaccination_expiry;
+
 const DEFAULT_NONCE_MAX_USES: u32 = 1;
 #[allow(dead_code)]
 const NONCE_HISTORY_LIMIT: u32 = 8;
@@ -1135,6 +1234,7 @@ pub struct EventSubscription {
 pub enum SubscriptionKey {
     Subscription(u64),
     SubscriptionCount,
+    EventTypeSubscriptions(EventType),
     SubscriberSubscriptionCount(Address),
     SubscriberSubscriptionIndex((Address, u64)),
 }
@@ -2548,6 +2648,19 @@ impl KoraContract {
             &subscription_id,
         );
 
+        for event_type in subscription.event_types.iter() {
+            let key = SubscriptionKey::EventTypeSubscriptions(event_type.clone());
+            let mut indexed_ids: Vec<u64> = env
+                .storage()
+                .instance()
+                .get(&key)
+                .unwrap_or(Vec::new(&env));
+            if !indexed_ids.contains(subscription_id) {
+                indexed_ids.push_back(subscription_id);
+                env.storage().instance().set(&key, &indexed_ids);
+            }
+        }
+
         subscription_id
     }
 
@@ -2585,14 +2698,14 @@ impl KoraContract {
 
     fn matching_subscription_ids(env: &Env, event_type: EventType, pet_id: u64) -> Vec<u64> {
         let now = env.ledger().timestamp();
-        let count: u64 = env
+        let mut matches = Vec::new(env);
+        let indexed_ids: Vec<u64> = env
             .storage()
             .instance()
-            .get(&SubscriptionKey::SubscriptionCount)
-            .unwrap_or(0);
-        let mut matches = Vec::new(env);
+            .get(&SubscriptionKey::EventTypeSubscriptions(event_type))
+            .unwrap_or(Vec::new(env));
 
-        for subscription_id in 1..=count {
+        for subscription_id in indexed_ids.iter() {
             let Some(subscription) = env
                 .storage()
                 .instance()
@@ -6902,10 +7015,10 @@ impl KoraContract {
             .unwrap_or(0);
 
         let mut result = Vec::new(&env);
-        let mut included_count = 0u64;
+        let mut skipped_count = 0u64;
 
         for i in 1..=lab_count {
-            if included_count >= limit as u64 {
+            if result.len() >= limit {
                 break;
             }
 
@@ -6923,10 +7036,11 @@ impl KoraContract {
                     };
 
                     if in_range {
-                        if included_count >= offset {
+                        if skipped_count >= offset {
                             result.push_back(lab);
+                        } else {
+                            skipped_count += 1;
                         }
-                        included_count += 1;
                     }
                 }
             }
