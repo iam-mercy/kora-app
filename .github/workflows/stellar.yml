@@ -21,8 +21,19 @@ jobs:
           # build must go through `stellar contract build` (>= v25.2.0) so the
           # spec-shaking strip runs — a plain `cargo build` now hard-errors.
           target: wasm32v1-none
+      - name: Cache Stellar CLI
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/stellar
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-stellar-cli-25.2.0
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli
+        run: |
+          if [ ! -x "$HOME/.cargo/bin/stellar" ]; then
+            cargo install --locked stellar-cli --version 25.2.0
+          fi
       - name: Build contracts
         run: |
           cd stellar-contracts

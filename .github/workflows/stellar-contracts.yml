@@ -74,12 +74,24 @@ jobs:
           # build script on Rust 1.82+.
           targets: wasm32v1-none
 
+      - name: Cache Stellar CLI
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/stellar
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-stellar-cli-25.2.0
+
       - name: Install Stellar CLI
         # soroban-sdk 28 requires the contract to be built by `stellar contract
         # build` from stellar-cli >= v25.2.0 (it runs the spec-shaking strip and
         # sets SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2). A plain
         # `cargo build` now hard-errors.
-        run: cargo install --locked stellar-cli
+        run: |
+          if [ ! -x "$HOME/.cargo/bin/stellar" ]; then
+            cargo install --locked stellar-cli --version 25.2.0
+          fi
 
       - name: Install wasm-opt (binaryen)
         run: sudo apt-get update && sudo apt-get install -y binaryen
@@ -121,6 +133,12 @@ jobs:
         working-directory: stellar-contracts
         run: cargo test
 
+      - name: Build pet transfer adoption contract
+        run: cargo build --manifest-path stellar-contracts/contracts/pet-transfer-adoption/Cargo.toml --target wasm32-unknown-unknown --release
+
+      - name: Test pet transfer adoption contract
+        run: cargo test --manifest-path stellar-contracts/contracts/pet-transfer-adoption/Cargo.toml
+
   # Deployment to Stellar testnet is disabled: the optimized KoraContract Wasm
   # (~214 KiB) exceeds the network's 128 KiB `contract_max_size_bytes` cap and is
   # rejected on upload with `tx_malformed` / TxSorobanInvalid. Re-enable this job
@@ -142,7 +160,7 @@ jobs:
           targets: wasm32v1-none
 
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli
+        run: cargo install --locked stellar-cli --version 25.2.0
 
       - name: Install wasm-opt (binaryen)
         run: sudo apt-get update && sudo apt-get install -y binaryen
