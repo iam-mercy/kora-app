@@ -119,7 +119,7 @@ jobs:
 
       - name: Test Stellar contracts
         working-directory: stellar-contracts
-        run: cargo test
+        run: cargo test --workspace
 
   # Deployment to Stellar testnet is disabled: the optimized KoraContract Wasm
   # (~214 KiB) exceeds the network's 128 KiB `contract_max_size_bytes` cap and is
