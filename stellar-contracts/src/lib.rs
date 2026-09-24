@@ -356,6 +356,7 @@ pub enum ContractError {
     NoPreviousUpgrade = 41,
     QuorumNotMet = 45,
     RateLimitExceeded = 46,
+    TimelockNotExpired = 47,
 }
 
 // --- MULTI-LANGUAGE ERROR REGISTRY (Issue #684) ---
@@ -1025,6 +1026,8 @@ pub struct UpgradeProposal {
     pub proposed_at: u64,
     pub approved: bool,
     pub executed: bool,
+    pub approvals: Vec<Address>,
+    pub required_approvals: u32,
     pub timelock_duration: u64,   // seconds; min 86400 (24h)
     pub approved_at: Option<u64>, // when quorum was reached
     pub vetoed: bool,
@@ -1227,7 +1230,8 @@ pub enum SystemKey {
     PendingConfig, // Issue #626: Three-phase bootstrap
     Proposal(u64),
     ProposalCount,
-    PendingThresholdChange, // Issue #815: full-quorum threshold changes
+    PendingThresholdChange(u64), // Issue #815: full-quorum threshold changes
+    PendingThresholdChangeCount,
 
     // Timelock and veto keys
     AdminTimelockConfig,
@@ -1264,6 +1268,7 @@ pub enum SystemKey {
     // Rollback keys
     RollbackDeadline,        // timestamp after which rollback is no longer possible
     PreviousWasmHash,        // BytesN<32> of the previous WASM hash before upgrade
+    CurrentWasmHash,         // BytesN<32> of the currently tracked WASM hash
     // Version keys
     StorageVersion,          // ContractVersion for storage schema
     // Admin activity log keys (Issue #816)
@@ -1856,6 +1861,8 @@ pub enum ParamKey {
     HealthScoreCacheTtl,
     /// Multisig approval threshold. Stored as `u32` (cast to u64 in proposal).
     AdminThreshold,
+    /// Governance quorum percentage. Stored as `u32` (cast to u64 in proposal).
+    AdminQuorumPercent,
 }
 
 #[contracttype]
@@ -1904,6 +1911,7 @@ pub struct PendingConfig {
 pub struct PendingThresholdChange {
     pub new_threshold: u32,
     pub approvals: Vec<Address>,
+    pub expires_at: u64,
 }
 
 /// Multi-signature configuration for a pet.
@@ -3053,6 +3061,15 @@ impl KoraContract {
                             *value as u32,
                         );
                     }
+                    ParamKey::AdminQuorumPercent => {
+                        env.storage()
+                            .instance()
+                            .set(&SystemKey::AdminQuorumPercent, &(*value as u32));
+                        env.events().publish(
+                            (Symbol::new(&env, "QuorumPercentChanged"),),
+                            *value as u32,
+                        );
+                    }
                 }
             }
             _ => {}
@@ -3979,41 +3996,41 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::InvalidThreshold);
         }
 
-        // Guard: reject if any active (non-executed, non-expired) proposal exists
         let proposal_count: u64 = env
             .storage()
             .instance()
-            .get(&SystemKey::ProposalCount)
+            .get(&SystemKey::PendingThresholdChangeCount)
             .unwrap_or(0);
         let now = env.ledger().timestamp();
-        for i in 1..=proposal_count {
-            if let Some(p) = env
+        let mut proposal_id = 0;
+        let mut pending = None;
+        for id in 1..=proposal_count {
+            if let Some(candidate) = env
                 .storage()
                 .instance()
-                .get::<SystemKey, MultiSigProposal>(&SystemKey::Proposal(i))
+                .get::<SystemKey, PendingThresholdChange>(&SystemKey::PendingThresholdChange(id))
             {
-                if !p.executed && now <= p.expires_at {
-                    panic_with_error!(&env, ContractError::InvalidState);
+                if candidate.new_threshold == new_threshold {
+                    if now > candidate.expires_at {
+                        env.storage()
+                            .instance()
+                            .remove(&SystemKey::PendingThresholdChange(id));
+                        continue;
+                    }
+                    proposal_id = id;
+                    pending = Some(candidate);
+                    break;
                 }
             }
         }
-
-        let mut pending: PendingThresholdChange = env
-            .storage()
-            .instance()
-            .get(&SystemKey::PendingThresholdChange)
-            .unwrap_or(PendingThresholdChange {
+        let mut pending = pending.unwrap_or_else(|| {
+            proposal_id = proposal_count.saturating_add(1);
+            PendingThresholdChange {
                 new_threshold,
                 approvals: Vec::new(&env),
-            });
-
-        // A differently-valued change supersedes whatever was pending.
-        if pending.new_threshold != new_threshold {
-            pending = PendingThresholdChange {
-                new_threshold,
-                approvals: Vec::new(&env),
-            };
-        }
+                expires_at: now.saturating_add(7 * 86400),
+            }
+        });
 
         if pending.approvals.contains(&proposer) {
             panic_with_error!(&env, ContractError::AdminAlreadyApproved);
@@ -4024,14 +4041,17 @@ impl KoraContract {
             // Not every current admin has approved yet — remains pending.
             env.storage()
                 .instance()
-                .set(&SystemKey::PendingThresholdChange, &pending);
+                .set(&SystemKey::PendingThresholdChange(proposal_id), &pending);
+            env.storage()
+                .instance()
+                .set(&SystemKey::PendingThresholdChangeCount, &proposal_id);
             return;
         }
 
         // Every current admin has approved — apply the change.
         env.storage()
             .instance()
-            .remove(&SystemKey::PendingThresholdChange);
+            .remove(&SystemKey::PendingThresholdChange(proposal_id));
 
         let old_threshold: u32 = env
             .storage()
@@ -4051,25 +4071,19 @@ impl KoraContract {
 
     /// Set the quorum percentage required for governance proposal execution.
     /// `percent` is a whole-number percentage (e.g. 50 means 50% of admins
-    /// must vote). 0 disables quorum checks entirely.
+    /// must vote). Values are restricted to 51..=100.
     ///
     /// Only callable by an existing admin.
-    pub fn set_quorum_percent(env: Env, admin: Address, percent: u32) {
-        admin.require_auth();
-        if !Self::is_admin_address(&env, &admin) {
-            panic_with_error!(&env, ContractError::NotAnAdmin);
-        }
-        if percent > 100 {
+    pub fn set_quorum_percent(env: Env, admin: Address, percent: u32) -> u64 {
+        if percent < 51 || percent > 100 {
             panic_with_error!(&env, ContractError::InvalidInput);
         }
-        env.storage()
-            .instance()
-            .set(&SystemKey::AdminQuorumPercent, &percent);
-
-        env.events().publish(
-            (Symbol::new(&env, "QuorumPercentChanged"),),
-            percent,
-        );
+        Self::propose_action(
+            env,
+            admin,
+            ProposalAction::ParameterChange((ParamKey::AdminQuorumPercent, percent as u64)),
+            7 * 86400,
+        )
     }
 
     /// Returns the current quorum percentage. 0 means quorum is disabled.
@@ -11625,6 +11639,12 @@ impl KoraContract {
             proposed_at: now,
             approved: false,
             executed: false,
+            approvals: Vec::new(&env),
+            required_approvals: env
+                .storage()
+                .instance()
+                .get(&SystemKey::AdminThreshold)
+                .unwrap_or(1),
             timelock_duration: 86400,
             approved_at: None,
             vetoed: false,
@@ -11660,8 +11680,14 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::ProposalAlreadyExecuted);
         }
 
-        proposal.approved = true;
-        proposal.approved_at = Some(now);
+        if proposal.approvals.contains(&admin) {
+            panic_with_error!(&env, ContractError::AdminAlreadyApproved);
+        }
+        proposal.approvals.push_back(admin);
+        if proposal.approvals.len() as u32 >= proposal.required_approvals {
+            proposal.approved = true;
+            proposal.approved_at = Some(now);
+        }
 
         env.storage()
             .instance()
@@ -11690,8 +11716,39 @@ impl KoraContract {
         if proposal.executed {
             panic_with_error!(&env, ContractError::ProposalAlreadyExecuted);
         }
+        if (proposal.approvals.len() as u32) < proposal.required_approvals {
+            panic_with_error!(&env, ContractError::ThresholdNotMet);
+        }
+        let approved_at = proposal
+            .approved_at
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::ProposalNotApproved));
+        if now < approved_at.saturating_add(proposal.timelock_duration) {
+            panic_with_error!(&env, ContractError::TimelockNotExpired);
+        }
+        let admin_count = env
+            .storage()
+            .instance()
+            .get::<SystemKey, Vec<Address>>(&SystemKey::Admins)
+            .map(|admins| admins.len() as u64)
+            .unwrap_or(1);
+        let quorum_percent = env
+            .storage()
+            .instance()
+            .get::<SystemKey, u32>(&SystemKey::AdminQuorumPercent)
+            .unwrap_or(0);
+        if quorum_percent > 0
+            && (proposal.approvals.len() as u64)
+                < (quorum_percent as u64 * admin_count + 99) / 100
+        {
+            panic_with_error!(&env, ContractError::QuorumNotMet);
+        }
 
         let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let previous_hash = env
+            .storage()
+            .instance()
+            .get::<SystemKey, BytesN<32>>(&SystemKey::CurrentWasmHash)
+            .unwrap_or_else(|| zero_hash.clone());
         if proposal.new_wasm_hash != zero_hash {
             env.deployer().update_current_contract(
                 soroban_sdk::ContractExecutable::Wasm(proposal.new_wasm_hash.clone()),
@@ -11701,7 +11758,10 @@ impl KoraContract {
         // Store rollback info
         env.storage()
             .instance()
-            .set(&SystemKey::PreviousWasmHash, &proposal.new_wasm_hash);
+            .set(&SystemKey::PreviousWasmHash, &previous_hash);
+        env.storage()
+            .instance()
+            .set(&SystemKey::CurrentWasmHash, &proposal.new_wasm_hash);
         env.storage()
             .instance()
             .set(&SystemKey::RollbackDeadline, &now.saturating_add(86400));
