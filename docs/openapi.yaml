@@ -546,6 +546,58 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
 
   schemas:
+    TransferStatus:
+      type: string
+      enum: [Pending, Approved, Rejected, Cancelled]
+
+    TransferType:
+      type: string
+      enum: [Direct, Adoption, Multisig]
+
+    TransferRequest:
+      type: object
+      required: [pet_id, current_owner, new_owner, timestamp, status, transfer_type]
+      properties:
+        pet_id:
+          type: integer
+          format: int64
+        current_owner:
+          type: string
+          description: Stellar address of the current pet owner
+        new_owner:
+          type: string
+          description: Stellar address receiving ownership
+        timestamp:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/TransferStatus'
+        transfer_type:
+          $ref: '#/components/schemas/TransferType'
+
+    AdoptionRecord:
+      type: object
+      required: [pet_id, from, to, signed_at, state, transfer_type]
+      properties:
+        pet_id:
+          type: integer
+          format: int64
+        from:
+          type: string
+        to:
+          type: string
+        organization:
+          type: string
+          nullable: true
+        signed_at:
+          type: integer
+          format: int64
+        state:
+          type: string
+          enum: [Signed, Completed, Waived, Rejected]
+        transfer_type:
+          $ref: '#/components/schemas/TransferType'
+
     ErrorResponse:
       type: object
       required: [error, message]
