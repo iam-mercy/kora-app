@@ -162,24 +162,37 @@ describe("KoraRegistry", function () {
       expect(await registry.getPetsByOwner(owner.address)).to.deep.equal([petId]);
     });
 
-    it("transfers a pet and emits PetTransferred", async function () {
+    it("requires recipient acceptance before transferring a pet", async function () {
       const petId = await registerPet();
-      await expect(registry.connect(owner).transferPet(petId, other.address))
-        .to.emit(registry, "PetTransferred")
+      await expect(registry.connect(owner).initiatePetTransfer(petId, other.address))
+        .to.emit(registry, "PetTransferInitiated")
+        .withArgs(petId, owner.address, other.address);
+      expect((await registry.pets(petId)).owner).to.equal(owner.address);
+      await expect(registry.connect(other).acceptPetTransfer(petId))
+        .to.emit(registry, "PetTransferAccepted")
         .withArgs(petId, owner.address, other.address);
       expect((await registry.pets(petId)).owner).to.equal(other.address);
     });
 
-    it("transferPet reverts on the zero address", async function () {
+    it("initiatePetTransfer reverts on the zero address", async function () {
       const petId = await registerPet();
-      await expect(registry.connect(owner).transferPet(petId, ethers.ZeroAddress))
+      await expect(registry.connect(owner).initiatePetTransfer(petId, ethers.ZeroAddress))
         .to.be.revertedWith("KoraRegistry: zero address");
     });
 
     it("onlyPetOwner: non-owner cannot transfer", async function () {
       const petId = await registerPet();
-      await expect(registry.connect(other).transferPet(petId, other.address))
+      await expect(registry.connect(other).initiatePetTransfer(petId, admin.address))
         .to.be.revertedWith("KoraRegistry: not pet owner");
+    });
+
+    it("allows the owner to cancel a pending transfer", async function () {
+      const petId = await registerPet();
+      await registry.connect(owner).initiatePetTransfer(petId, other.address);
+      await expect(registry.connect(owner).cancelPetTransfer(petId))
+        .to.emit(registry, "PetTransferCancelled")
+        .withArgs(petId, owner.address, other.address);
+      expect((await registry.pets(petId)).pendingOwner).to.equal(ethers.ZeroAddress);
     });
 
     it("onlyPetOwner: non-owner cannot deactivate", async function () {
@@ -371,7 +384,8 @@ describe("KoraRegistry", function () {
     it("pet no longer appears in previous owner's getPetsByOwner after transfer", async function () {
       const petId = await registerPet();
 
-      await registry.connect(owner).transferPet(petId, other.address);
+      await registry.connect(owner).initiatePetTransfer(petId, other.address);
+      await registry.connect(other).acceptPetTransfer(petId);
 
       const fromPets = await registry.getPetsByOwner(owner.address);
       expect(fromPets.map(id => id.toString())).to.not.include(petId.toString());
@@ -383,8 +397,10 @@ describe("KoraRegistry", function () {
     it("multiple transfers leave no stale entries in intermediate owners", async function () {
       const petId = await registerPet();
 
-      await registry.connect(owner).transferPet(petId, other.address);
-      await registry.connect(other).transferPet(petId, admin.address);
+      await registry.connect(owner).initiatePetTransfer(petId, other.address);
+      await registry.connect(other).acceptPetTransfer(petId);
+      await registry.connect(other).initiatePetTransfer(petId, admin.address);
+      await registry.connect(admin).acceptPetTransfer(petId);
 
       const ownerPets = await registry.getPetsByOwner(owner.address);
       const otherPets = await registry.getPetsByOwner(other.address);
@@ -625,6 +641,22 @@ describe("KoraRegistry", function () {
         );
     });
 
+    it("blocks correction while paused and resumes after unpause", async function () {
+      await registry.connect(admin).pause();
+      await expect(
+        registry.connect(vet).correctMedicalRecord(
+          recordId, "Paused diag", "Paused treat", ""
+        )
+      ).to.be.revertedWithCustomError(registry, "EnforcedPause");
+
+      await registry.connect(admin).unpause();
+      await expect(
+        registry.connect(vet).correctMedicalRecord(
+          recordId, "Unpaused diag", "Unpaused treat", ""
+        )
+      ).to.not.be.reverted;
+    });
+
     it("allows empty notes in correction (notes is optional)", async function () {
       await expect(
         registry.connect(vet).correctMedicalRecord(
@@ -718,23 +750,30 @@ describe("KoraRegistry", function () {
   });
 
   // ---------------------------------------------------------------------------
-  // Admin transfer — transferAdmin
+  // Admin transfer — proposeAdmin / acceptAdmin
   // ---------------------------------------------------------------------------
   describe("transferAdmin", function () {
-    it("emits AdminTransferred with correct previous and new admin", async function () {
-      await expect(registry.connect(admin).transferAdmin(other.address))
-        .to.emit(registry, "AdminTransferred")
+    it("proposes without changing admin and emits AdminTransferProposed", async function () {
+      await expect(registry.connect(admin).proposeAdmin(other.address))
+        .to.emit(registry, "AdminTransferProposed")
         .withArgs(admin.address, other.address);
+      expect(await registry.admin()).to.equal(admin.address);
+      expect(await registry.pendingAdmin()).to.equal(other.address);
     });
 
-    it("updates the admin state variable", async function () {
-      await registry.connect(admin).transferAdmin(other.address);
+    it("accepts the proposal and emits AdminTransferred", async function () {
+      await registry.connect(admin).proposeAdmin(other.address);
+      await expect(registry.connect(other).acceptAdmin())
+        .to.emit(registry, "AdminTransferred")
+        .withArgs(admin.address, other.address);
       expect(await registry.admin()).to.equal(other.address);
+      expect(await registry.pendingAdmin()).to.equal(ethers.ZeroAddress);
     });
 
     it("old admin loses onlyAdmin access after transfer", async function () {
       await registry.connect(vet).registerVet("LIC-NEW", "General Practice");
-      await registry.connect(admin).transferAdmin(other.address);
+      await registry.connect(admin).proposeAdmin(other.address);
+      await registry.connect(other).acceptAdmin();
       // original admin can no longer call verifyVet
       await expect(
         registry.connect(admin).verifyVet(vet.address)
@@ -743,23 +782,37 @@ describe("KoraRegistry", function () {
 
     it("new admin can exercise onlyAdmin functions", async function () {
       await registry.connect(vet).registerVet("LIC-NEW", "General Practice");
-      await registry.connect(admin).transferAdmin(other.address);
+      await registry.connect(admin).proposeAdmin(other.address);
+      await registry.connect(other).acceptAdmin();
       // new admin (other) can now verify vets
       await expect(
         registry.connect(other).verifyVet(vet.address)
       ).to.not.be.reverted;
     });
 
-    it("reverts when called by non-admin", async function () {
-      await expect(
-        registry.connect(owner).transferAdmin(other.address)
-      ).to.be.revertedWith("KoraRegistry: not admin");
+    it("reverts when a non-admin proposes a transfer", async function () {
+      await expect(registry.connect(owner).proposeAdmin(other.address))
+        .to.be.revertedWith("KoraRegistry: not admin");
     });
 
-    it("reverts when newAdmin is the zero address", async function () {
-      await expect(
-        registry.connect(admin).transferAdmin(ethers.ZeroAddress)
-      ).to.be.revertedWith("KoraRegistry: zero address");
+    it("reverts when a non-pending account accepts", async function () {
+      await registry.connect(admin).proposeAdmin(other.address);
+      await expect(registry.connect(owner).acceptAdmin())
+        .to.be.revertedWith("KoraRegistry: not pending admin");
+    });
+
+    it("reverts when proposing the zero address", async function () {
+      await expect(registry.connect(admin).proposeAdmin(ethers.ZeroAddress))
+        .to.be.revertedWith("KoraRegistry: zero address");
+    });
+
+    it("overwrites a previous pending proposal", async function () {
+      await registry.connect(admin).proposeAdmin(other.address);
+      await registry.connect(admin).proposeAdmin(owner.address);
+      await expect(registry.connect(other).acceptAdmin())
+        .to.be.revertedWith("KoraRegistry: not pending admin");
+      await registry.connect(owner).acceptAdmin();
+      expect(await registry.admin()).to.equal(owner.address);
     });
   });
 
@@ -794,7 +847,7 @@ describe("KoraRegistry", function () {
       const petId = await registerPet();
       await registry.connect(admin).pause();
       await expect(
-        registry.connect(owner).transferPet(petId, other.address)
+        registry.connect(owner).initiatePetTransfer(petId, other.address)
       ).to.be.revertedWithCustomError(registry, "EnforcedPause");
     });
 
@@ -860,74 +913,3 @@ describe("KoraRegistry", function () {
   // ---------------------------------------------------------------------------
   // Issue #920 — correctMedicalRecord
   // ---------------------------------------------------------------------------
-  describe("#920 — correctMedicalRecord", function () {
-    let petId, recordId;
-
-    beforeEach(async function () {
-      petId = await registerPet();
-      const tx = await registry.connect(vet).addMedicalRecord(
-        petId, "wrong diagnosis", "wrong treatment", "wrong notes"
-      );
-      const receipt = await tx.wait();
-      const event = receipt.logs.find(
-        l => l.fragment && l.fragment.name === "MedicalRecordAdded"
-      );
-      recordId = event.args.recordId;
-    });
-
-    it("original vet can correct the record and emits MedicalRecordCorrected", async function () {
-      await expect(
-        registry.connect(vet).correctMedicalRecord(
-          recordId, "correct diagnosis", "correct treatment", "correct notes"
-        )
-      )
-        .to.emit(registry, "MedicalRecordCorrected")
-        .withArgs(
-          recordId, vet.address,
-          "wrong diagnosis", "wrong treatment", "wrong notes",
-          "correct diagnosis", "correct treatment", "correct notes"
-        );
-
-      const records = await registry.getPetRecords(petId);
-      expect(records[0].diagnosis).to.equal("correct diagnosis");
-      expect(records[0].treatment).to.equal("correct treatment");
-      expect(records[0].notes).to.equal("correct notes");
-    });
-
-    it("admin can correct the record", async function () {
-      await expect(
-        registry.connect(admin).correctMedicalRecord(
-          recordId, "admin fix", "admin treatment", ""
-        )
-      ).to.emit(registry, "MedicalRecordCorrected");
-    });
-
-    it("unauthorized caller cannot correct the record", async function () {
-      await expect(
-        registry.connect(other).correctMedicalRecord(
-          recordId, "hack", "hack", ""
-        )
-      ).to.be.revertedWith("KoraRegistry: not authorized");
-    });
-
-    it("reverts on empty diagnosis", async function () {
-      await expect(
-        registry.connect(vet).correctMedicalRecord(recordId, "", "treatment", "")
-      ).to.be.revertedWith("KoraRegistry: invalid diagnosis length");
-    });
-
-    it("reverts on empty treatment", async function () {
-      await expect(
-        registry.connect(vet).correctMedicalRecord(recordId, "diagnosis", "", "")
-      ).to.be.revertedWith("KoraRegistry: invalid treatment length");
-    });
-
-    it("reverts on notes over MAX_LONG_LEN", async function () {
-      await expect(
-        registry.connect(vet).correctMedicalRecord(
-          recordId, "diagnosis", "treatment", "a".repeat(1001)
-        )
-      ).to.be.revertedWith("KoraRegistry: notes too long");
-    });
-  });
-});

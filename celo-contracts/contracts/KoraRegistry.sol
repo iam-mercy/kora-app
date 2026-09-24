@@ -49,6 +49,7 @@ contract KoraRegistry is Pausable {
     /// @param breed   Breed descriptor.
     /// @param birthday Date of birth string.
     /// @param active  False when the pet has been deactivated.
+    /// @param pendingOwner Proposed recipient awaiting acceptance.
     struct Pet {
         uint256 petId;
         address owner;
@@ -57,6 +58,7 @@ contract KoraRegistry is Pausable {
         string  breed;
         string  birthday;
         bool    active;
+        address pendingOwner;
     }
 
     /// @notice A single medical record entry for a pet.
@@ -91,11 +93,6 @@ contract KoraRegistry is Pausable {
     mapping(uint256 => uint256) private _recordIndex; // recordId => index in _petRecords[petId]
     mapping(bytes32 => address)  private _licenseToVet;
 
-    // recordId → petId, so correctMedicalRecord can locate the record
-    mapping(uint256 => uint256) private _recordPetId;
-    // recordId → index inside _petRecords[petId]
-    mapping(uint256 => uint256) private _recordIndex;
-
     // Ordered list of all ever-registered vet addresses (issue #926)
     address[] private _vetAddresses;
 
@@ -126,12 +123,6 @@ contract KoraRegistry is Pausable {
     /// @param owner Address of the registering owner.
     event PetRegistered(uint256 indexed petId, address indexed owner);
 
-    /// @notice Emitted when a pet's ownership is transferred.
-    /// @param petId ID of the transferred pet.
-    /// @param from  Previous owner.
-    /// @param to    New owner.
-    event PetTransferred(uint256 indexed petId, address indexed from, address indexed to);
-
     /// @notice Emitted when a pet is deactivated.
     /// @param petId ID of the deactivated pet.
     event PetDeactivated(uint256 indexed petId);
@@ -145,17 +136,6 @@ contract KoraRegistry is Pausable {
     /// @param recordId ID assigned to the new record.
     /// @param vet      Address of the vet who added the record.
     event MedicalRecordAdded(uint256 indexed petId, uint256 indexed recordId, address indexed vet);
-    event MedicalRecordCorrected(
-        uint256 indexed recordId,
-        address indexed correctedBy,
-        string  oldDiagnosis,
-        string  oldTreatment,
-        string  oldNotes,
-        string  newDiagnosis,
-        string  newTreatment,
-        string  newNotes
-    );
-
     /// @notice Emitted when a medical record is corrected.
     /// @dev    The original field values are preserved in the event log for full auditability.
     /// @param recordId         ID of the corrected record.
@@ -183,6 +163,13 @@ contract KoraRegistry is Pausable {
     /// @param previousAdmin The outgoing admin address.
     /// @param newAdmin      The incoming admin address.
     event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
+    event AdminTransferProposed(address indexed currentAdmin, address indexed pendingAdmin);
+
+    event PetTransferInitiated(uint256 indexed petId, address indexed from, address indexed to);
+    event PetTransferAccepted(uint256 indexed petId, address indexed from, address indexed to);
+    event PetTransferCancelled(uint256 indexed petId, address indexed owner, address indexed pendingOwner);
+
+    address public pendingAdmin;
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -216,13 +203,21 @@ contract KoraRegistry is Pausable {
     // Admin management
     // -------------------------------------------------------------------------
 
-    /// @notice Transfer the admin role to a new address.
-    /// @param newAdmin The address that will become the new admin.
-    function transferAdmin(address newAdmin) external onlyAdmin {
+    /// @notice Propose a new administrator.
+    /// @param newAdmin The address that may accept the admin role.
+    function proposeAdmin(address newAdmin) external onlyAdmin {
         require(newAdmin != address(0), "KoraRegistry: zero address");
+        pendingAdmin = newAdmin;
+        emit AdminTransferProposed(admin, newAdmin);
+    }
+
+    /// @notice Accept a previously proposed administrator role.
+    function acceptAdmin() external {
+        require(msg.sender == pendingAdmin, "KoraRegistry: not pending admin");
         address previous = admin;
-        admin = newAdmin;
-        emit AdminTransferred(previous, newAdmin);
+        admin = pendingAdmin;
+        pendingAdmin = address(0);
+        emit AdminTransferred(previous, admin);
     }
 
     // -------------------------------------------------------------------------
@@ -352,17 +347,34 @@ contract KoraRegistry is Pausable {
             species: species,
             breed:   breed,
             birthday: birthday,
-            active:  true
+            active:  true,
+            pendingOwner: address(0)
         });
         _ownerPets[msg.sender].push(petId);
         emit PetRegistered(petId, msg.sender);
     }
 
-    /// @notice Transfer ownership of a pet to another address.
+    /// @notice Initiate a pet ownership transfer to another address.
     /// @param petId ID of the pet to transfer.
     /// @param to    Recipient address (non-zero).
-    function transferPet(uint256 petId, address to) external onlyPetOwner(petId) whenNotPaused {
+    function initiatePetTransfer(uint256 petId, address to)
+        external
+        onlyPetOwner(petId)
+        whenNotPaused
+    {
         require(to != address(0), "KoraRegistry: zero address");
+        require(to != msg.sender, "KoraRegistry: transfer to current owner");
+        require(pets[petId].active, "KoraRegistry: pet inactive");
+        pets[petId].pendingOwner = to;
+        emit PetTransferInitiated(petId, msg.sender, to);
+    }
+
+    /// @notice Accept a pending pet ownership transfer.
+    /// @param petId ID of the pet to accept.
+    function acceptPetTransfer(uint256 petId) external whenNotPaused {
+        address pendingOwner = pets[petId].pendingOwner;
+        require(pendingOwner != address(0), "KoraRegistry: no pending transfer");
+        require(msg.sender == pendingOwner, "KoraRegistry: not pending owner");
         require(pets[petId].active, "KoraRegistry: pet inactive");
         address from = pets[petId].owner;
 
@@ -376,9 +388,19 @@ contract KoraRegistry is Pausable {
             }
         }
 
-        pets[petId].owner = to;
-        _ownerPets[to].push(petId);
-        emit PetTransferred(petId, from, to);
+        pets[petId].owner = pendingOwner;
+        pets[petId].pendingOwner = address(0);
+        _ownerPets[pendingOwner].push(petId);
+        emit PetTransferAccepted(petId, from, pendingOwner);
+    }
+
+    /// @notice Cancel a pending pet ownership transfer.
+    /// @param petId ID of the pet whose transfer should be cancelled.
+    function cancelPetTransfer(uint256 petId) external onlyPetOwner(petId) whenNotPaused {
+        address pendingOwner = pets[petId].pendingOwner;
+        require(pendingOwner != address(0), "KoraRegistry: no pending transfer");
+        pets[petId].pendingOwner = address(0);
+        emit PetTransferCancelled(petId, msg.sender, pendingOwner);
     }
 
     /// @notice Deactivate a pet. Only callable by the pet's owner.
@@ -436,7 +458,6 @@ contract KoraRegistry is Pausable {
             notes:      notes,
             timestamp:  block.timestamp
         }));
-        _recordPetId[recordId] = petId;
         _recordIndex[recordId] = _petRecords[petId].length - 1;
         emit MedicalRecordAdded(petId, recordId, msg.sender);
     }
@@ -482,7 +503,7 @@ contract KoraRegistry is Pausable {
         string calldata diagnosis,
         string calldata treatment,
         string calldata notes
-    ) external {
+    ) external whenNotPaused {
         uint256 petId = _recordPet[recordId];
         MedicalRecord storage rec = _petRecords[petId][_recordIndex[recordId]];
         require(rec.recordId == recordId, "KoraRegistry: record not found");
@@ -490,15 +511,6 @@ contract KoraRegistry is Pausable {
             msg.sender == rec.vet || msg.sender == admin,
             "KoraRegistry: not authorized"
         );
-        uint256 petId = _recordPetId[recordId];
-        require(petId != 0, "KoraRegistry: record does not exist");
-
-        MedicalRecord storage rec = _petRecords[petId][_recordIndex[recordId]];
-        require(
-            msg.sender == rec.vet || msg.sender == admin,
-            "KoraRegistry: not authorised to correct record"
-        );
-
         require(bytes(diagnosis).length > 0 && bytes(diagnosis).length <= MAX_LONG_LEN,
             "KoraRegistry: invalid diagnosis length");
         require(bytes(treatment).length > 0 && bytes(treatment).length <= MAX_LONG_LEN,
@@ -506,22 +518,12 @@ contract KoraRegistry is Pausable {
         require(bytes(notes).length <= MAX_LONG_LEN,
             "KoraRegistry: notes too long");
 
-        emit MedicalRecordCorrected(
-            recordId, msg.sender,
-            rec.diagnosis, rec.treatment, rec.notes,
-            diagnosis, treatment, notes
-        );
-        rec.diagnosis = diagnosis;
-        rec.treatment = treatment;
-        rec.notes     = notes;
         string memory origDiagnosis = rec.diagnosis;
         string memory origTreatment = rec.treatment;
-        string memory origNotes     = rec.notes;
-
+        string memory origNotes = rec.notes;
         rec.diagnosis = diagnosis;
         rec.treatment = treatment;
         rec.notes     = notes;
-
         emit MedicalRecordCorrected(
             recordId,
             petId,
