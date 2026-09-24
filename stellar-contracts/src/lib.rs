@@ -50,6 +50,9 @@ pub enum InsuranceKey {
     ClaimCount,                // Global count of claims
     PetClaimCount(u64),        // pet_id -> count of claims
     PetClaimIndex((u64, u64)), // (pet_id, index) -> claim_id
+    // Existing claim identity -> claim id. The tuple preserves the current
+    // public claim API while preventing the same treatment from being filed twice.
+    ClaimByInvoice((u64, String, u64, String)),
     PetPolicyCount(u64),       // pet_id -> count of policies
     PetPolicyIndex((u64, u64)), // (pet_id, index) -> InsurancePolicy
     // Fraud detection
@@ -2735,7 +2738,7 @@ impl KoraContract {
         medications
     }
 
-    fn get_pet_insurance(env: Env, pet_id: u64) -> Option<InsurancePolicy> {
+    fn get_active_pet_insurance(env: Env, pet_id: u64) -> Option<InsurancePolicy> {
         let count = env
             .storage()
             .instance()
@@ -5166,7 +5169,7 @@ impl KoraContract {
             let active_medications_count = active_medications.len() as u64;
 
             // Check if insurance exists
-            let insurance = KoraContract::get_pet_insurance(env.clone(), pet_id);
+            let insurance = KoraContract::get_active_pet_insurance(env.clone(), pet_id);
             let has_insurance = insurance.is_some();
 
             // Pure view: no side effects
@@ -9536,6 +9539,15 @@ impl KoraContract {
     ) -> u64 {
         claimer.require_auth();
 
+        let pet = env
+            .storage()
+            .instance()
+            .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
+            .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
+        if claimer != pet.owner && claimer != pet.new_owner {
+            env.panic_with_error(ContractError::Unauthorized);
+        }
+
         let count: u64 = env
             .storage()
             .instance()
@@ -11953,6 +11965,246 @@ impl KoraContract {
         };
         let b: MedicalRecordAmendment = match env.storage().instance().get(&MedicalKey::MedicalRecordAmendment((record_id, to_version))) {
             Some(v) => v,
+
+    pub fn add_insurance_policy(
+        env: Env,
+        pet_id: u64,
+        policy_id: String,
+        provider: String,
+        coverage_type: String,
+        premium: u64,
+        coverage_limit: u64,
+        expiry_date: u64,
+    ) -> bool {
+        if env.storage().instance().get::<DataKey, Pet>(&DataKey::Pet(pet_id)).is_none() {
+            return false;
+        }
+
+        let policy_count: u64 = env
+            .storage()
+            .instance()
+            .get(&InsuranceKey::PetPolicyCount(pet_id))
+            .unwrap_or(0);
+        for index in 1..=policy_count {
+            if let Some(existing) = env.storage().instance().get::<InsuranceKey, InsurancePolicy>(
+                &InsuranceKey::PetPolicyIndex((pet_id, index)),
+            ) {
+                if existing.policy_id == policy_id {
+                    return false;
+                }
+            }
+        }
+
+        let tier = if coverage_type == String::from_str(&env, "Premium") {
+            PremiumTier::Premium
+        } else if coverage_type == String::from_str(&env, "Standard") {
+            PremiumTier::Standard
+        } else {
+            PremiumTier::Basic
+        };
+        let policy = InsurancePolicy {
+            policy_id: policy_id.clone(),
+            provider: provider.clone(),
+            coverage_type,
+            tier,
+            premium,
+            coverage_limit,
+            start_date: env.ledger().timestamp(),
+            expiry_date,
+            active: true,
+        };
+        let new_count = safe_increment(policy_count);
+        env.storage().instance().set(
+            &InsuranceKey::PetPolicyIndex((pet_id, new_count)),
+            &policy,
+        );
+        env.storage().instance().set(&InsuranceKey::PetPolicyCount(pet_id), &new_count);
+        env.storage().instance().set(&InsuranceKey::Policy(pet_id), &policy);
+        env.events().publish(
+            (String::from_str(&env, "InsuranceAdded"), pet_id),
+            InsuranceAddedEvent {
+                version: EVENT_SCHEMA_VERSION,
+                pet_id,
+                policy_id,
+                provider,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+        true
+    }
+
+    pub fn get_pet_insurance(env: Env, pet_id: u64) -> Option<InsurancePolicy> {
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&InsuranceKey::PetPolicyCount(pet_id))
+            .unwrap_or(0);
+        if count == 0 {
+            return None;
+        }
+        env.storage()
+            .instance()
+            .get(&InsuranceKey::PetPolicyIndex((pet_id, count)))
+    }
+
+    pub fn update_insurance_status(
+        env: Env,
+        owner: Address,
+        pet_id: u64,
+        policy_id: String,
+        active: bool,
+    ) -> bool {
+        owner.require_auth();
+        let pet = match env.storage().instance().get::<DataKey, Pet>(&DataKey::Pet(pet_id)) {
+            Some(pet) => pet,
+            None => return false,
+        };
+        if pet.owner != owner {
+            env.panic_with_error(ContractError::Unauthorized);
+        }
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&InsuranceKey::PetPolicyCount(pet_id))
+            .unwrap_or(0);
+        for index in 1..=count {
+            let key = InsuranceKey::PetPolicyIndex((pet_id, index));
+            if let Some(mut policy) = env.storage().instance().get::<InsuranceKey, InsurancePolicy>(&key) {
+                if policy.policy_id == policy_id {
+                    policy.active = active;
+                    env.storage().instance().set(&key, &policy);
+                    if index == count {
+                        env.storage().instance().set(&InsuranceKey::Policy(pet_id), &policy);
+                    }
+                    env.events().publish(
+                        (String::from_str(&env, "InsuranceUpdated"), pet_id),
+                        InsuranceUpdatedEvent {
+                            version: EVENT_SCHEMA_VERSION,
+                            pet_id,
+                            policy_id,
+                            active,
+                            timestamp: env.ledger().timestamp(),
+                        },
+                    );
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn submit_insurance_claim(
+        env: Env,
+        pet_id: u64,
+        amount: u64,
+        description: String,
+    ) -> Option<u64> {
+        let policy = Self::get_active_pet_insurance(env.clone(), pet_id)?;
+        let fingerprint = InsuranceKey::ClaimByInvoice((
+            pet_id,
+            policy.policy_id.clone(),
+            amount,
+            description.clone(),
+        ));
+        if env.storage().instance().has(&fingerprint) {
+            env.panic_with_error(ContractError::InvalidInput);
+        }
+
+        let claim_id = safe_increment(
+            env.storage()
+                .instance()
+                .get::<InsuranceKey, u64>(&InsuranceKey::ClaimCount)
+                .unwrap_or(0),
+        );
+        let timestamp = env.ledger().timestamp();
+        let claim = InsuranceClaim {
+            claim_id,
+            pet_id,
+            policy_id: policy.policy_id.clone(),
+            amount,
+            date: timestamp,
+            status: InsuranceClaimStatus::Pending,
+            description,
+            flagged: false,
+            fraud_flags: 0,
+            documents: Vec::new(&env),
+            rejected_at: None,
+            appeal_reason: None,
+            appeal_evidence_cids: Vec::new(&env),
+            appealed_at: None,
+            original_reviewer: None,
+            appeal_reviewer: None,
+        };
+        env.storage().instance().set(&InsuranceKey::Claim(claim_id), &claim);
+        env.storage().instance().set(&InsuranceKey::ClaimCount, &claim_id);
+        env.storage().instance().set(&fingerprint, &claim_id);
+        let pet_count = safe_increment(
+            env.storage()
+                .instance()
+                .get(&InsuranceKey::PetClaimCount(pet_id))
+                .unwrap_or(0),
+        );
+        env.storage().instance().set(&InsuranceKey::PetClaimCount(pet_id), &pet_count);
+        env.storage().instance().set(&InsuranceKey::PetClaimIndex((pet_id, pet_count)), &claim_id);
+        env.events().publish(
+            (String::from_str(&env, "InsuranceClaimSubmitted"), pet_id),
+            InsuranceClaimSubmittedEvent {
+                version: EVENT_SCHEMA_VERSION,
+                claim_id,
+                pet_id,
+                policy_id: policy.policy_id,
+                amount,
+                flagged: false,
+                timestamp,
+            },
+        );
+        Some(claim_id)
+    }
+
+    pub fn get_insurance_claim(env: Env, claim_id: u64) -> Option<InsuranceClaim> {
+        env.storage().instance().get(&InsuranceKey::Claim(claim_id))
+    }
+
+    pub fn get_insurance_claim_count(env: Env, pet_id: u64) -> u64 {
+        env.storage().instance().get(&InsuranceKey::PetClaimCount(pet_id)).unwrap_or(0)
+    }
+
+    pub fn get_pet_insurance_claims(env: Env, pet_id: u64) -> Vec<InsuranceClaim> {
+        let mut claims = Vec::new(&env);
+        let count = Self::get_insurance_claim_count(env.clone(), pet_id);
+        for index in 1..=count {
+            if let Some(claim_id) = env.storage().instance().get::<InsuranceKey, u64>(&InsuranceKey::PetClaimIndex((pet_id, index))) {
+                if let Some(claim) = Self::get_insurance_claim(env.clone(), claim_id) {
+                    claims.push_back(claim);
+                }
+            }
+        }
+        claims
+    }
+
+    pub fn update_insurance_claim_status(
+        env: Env,
+        claim_id: u64,
+        status: InsuranceClaimStatus,
+    ) -> bool {
+        if let Some(mut claim) = Self::get_insurance_claim(env.clone(), claim_id) {
+            claim.status = status.clone();
+            env.storage().instance().set(&InsuranceKey::Claim(claim_id), &claim);
+            env.events().publish(
+                (String::from_str(&env, "InsuranceClaimStatusUpdated"), claim.pet_id),
+                InsuranceClaimStatusUpdatedEvent {
+                    version: EVENT_SCHEMA_VERSION,
+                    claim_id,
+                    pet_id: claim.pet_id,
+                    status,
+                    timestamp: env.ledger().timestamp(),
+                },
+            );
+            true
+        } else {
+            false
+        }
+    }
             None => return diffs,
         };
         if let Some(diag) = &b.changes.diagnosis {
