@@ -217,6 +217,19 @@ const MAX_BATCH_ERROR_MESSAGES: usize = 50;
 /// owner's storage quota. `add_attachment` enforces this cap. (Issue #774)
 const MAX_ATTACHMENTS_PER_RECORD: u32 = 20;
 
+/// Maximum plausible weight for a pet, in grams (500 kg). Rejects both
+/// zero-weight entries and unrealistic values that would corrupt dosage
+/// calculators and weight-history graphs downstream. (Issue #71)
+const MAX_PET_WEIGHT_GRAMS: u32 = 500_000;
+
+/// Maximum allowed drift, in seconds, between a caller-supplied feeding
+/// timestamp and the current ledger time. A small allowance (5 minutes)
+/// accommodates minor clock skew between a client and the ledger, while
+/// still rejecting materially future-dated feeding logs, which would
+/// corrupt daily nutrition summaries and weight-gain projections.
+/// (Issue #70)
+const CLOCK_SKEW_TOLERANCE: u64 = 300;
+
 /// Maximum number of milestone entries that can be stored in
 /// [`ActivityStreak::milestones_reached`].
 ///
@@ -4480,6 +4493,8 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::InvalidInput);
         }
 
+        Self::increment_pet_storage(&env, pet_id);
+
         let record_id: u64 = env
             .storage()
             .instance()
@@ -7493,11 +7508,18 @@ impl KoraContract {
             .unwrap_or(0)
     }
 
-    fn current_nutrition_day(env: &Env) -> u64 {
-        env.ledger().timestamp() / 86_400
+    /// Maps a (validated) feeding timestamp to its daily-summary bucket.
+    fn nutrition_day_for(timestamp: u64) -> u64 {
+        timestamp / 86_400
     }
 
-    pub fn log_feeding(env: Env, pet_id: u64, plan_id: u64, servings: u32) -> bool {
+    pub fn log_feeding(
+        env: Env,
+        pet_id: u64,
+        plan_id: u64,
+        servings: u32,
+        timestamp: u64,
+    ) -> bool {
         let plan: DietPlan = env
             .storage()
             .instance()
@@ -7516,13 +7538,19 @@ impl KoraContract {
 
         pet.owner.require_auth();
 
+        // Reject feeding logs materially dated in the future — see
+        // `CLOCK_SKEW_TOLERANCE` doc comment. (Issue #70)
+        if timestamp > env.ledger().timestamp().saturating_add(CLOCK_SKEW_TOLERANCE) {
+            env.panic_with_error(ContractError::InvalidInput)
+        }
+
         let calories = plan
             .calories_per_serving
             .checked_mul(servings)
             .unwrap_or_else(|| env.panic_with_error(ContractError::CounterOverflow));
 
-        let day = KoraContract::current_nutrition_day(&env);
-        let now = env.ledger().timestamp();
+        let day = KoraContract::nutrition_day_for(timestamp);
+        let now = timestamp;
 
         let mut summary = env
             .storage()
@@ -7620,6 +7648,10 @@ impl KoraContract {
             .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
 
         pet.owner.require_auth();
+
+        if weight == 0 || weight > MAX_PET_WEIGHT_GRAMS {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
 
         // Check storage quota (Issue #676)
         Self::increment_pet_storage(&env, pet_id);
@@ -10873,6 +10905,15 @@ impl KoraContract {
 
         // Record any newly-crossed milestones.
         // Guard with MAX_MILESTONES so the Vec never grows without bound.
+        //
+        // Deliberately `>=`, not `==` (Issue #68). `current_streak` only ever
+        // changes by exactly +1 per consecutive day or resets to 1 (this is
+        // the sole writer to `PetActivityStreak` in the whole contract), so
+        // today it can never actually skip past a milestone value. `>=` is
+        // kept anyway as a defensive margin: if a future change ever lets the
+        // streak advance by more than one day in a single update (e.g. a
+        // bulk/backfill activity import), `==` would silently and permanently
+        // miss that milestone, exactly as described in #68.
         for &milestone in STREAK_MILESTONE_DAYS {
             if streak.current_streak >= milestone {
                 // Only append if not already present AND cap not exceeded.

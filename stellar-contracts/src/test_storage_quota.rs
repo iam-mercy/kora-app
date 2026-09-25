@@ -329,6 +329,35 @@ fn test_write_rejected_when_quota_exceeded() {
     );
 }
 
+/// Issue #69: behavior records must consume storage quota like every other
+/// record type, so quota exhaustion also blocks `add_behavior_record`
+/// specifically (not just medical records, covered above).
+#[test]
+#[should_panic(expected = "StorageQuotaExceeded")]
+fn test_behavior_record_rejected_when_quota_exceeded() {
+    let (env, client, admin, owner) = setup_env();
+    let pet_id = register_test_pet(&client, &env, &owner);
+
+    // Set a very low quota
+    client.set_pet_storage_quota(&admin, &pet_id, &1);
+
+    // First behavior record consumes the only available quota unit.
+    client.add_behavior_record(
+        &pet_id,
+        &BehaviorType::Training,
+        &5,
+        &String::from_str(&env, "Good behavior"),
+    );
+
+    // Second should panic with StorageQuotaExceeded.
+    client.add_behavior_record(
+        &pet_id,
+        &BehaviorType::Training,
+        &5,
+        &String::from_str(&env, "More good behavior"),
+    );
+}
+
 // --- ADMIN QUOTA MANAGEMENT ---
 
 #[test]

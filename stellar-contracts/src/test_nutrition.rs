@@ -88,6 +88,63 @@ fn test_weight_entries_and_pet_update() {
     assert_eq!(profile.weight, 8u32);
 }
 
+/// Issue #71: a zero-gram weight entry is not a real measurement and would
+/// corrupt dosage calculators and weight-history graphs — must be rejected.
+#[test]
+#[should_panic(expected = "InvalidInput")]
+fn test_add_weight_entry_rejects_zero_weight() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
+
+    let owner = Address::generate(&env);
+    let pet_id = client.register_pet(
+        &owner,
+        &String::from_str(&env, "Luna"),
+        &String::from_str(&env, "2021-03-20"),
+        &Gender::Female,
+        &Species::Cat,
+        &String::from_str(&env, "Siamese"),
+        &String::from_str(&env, "Cream"),
+        &6u32,
+        &None,
+        &PrivacyLevel::Public,
+    );
+
+    client.add_weight_entry(&pet_id, &0u32);
+}
+
+/// Issue #71: a weight far beyond any real pet (here, ~2000x the 500kg cap)
+/// would corrupt dosage calculators and weight-history graphs just as badly
+/// as a zero entry — must also be rejected.
+#[test]
+#[should_panic(expected = "InvalidInput")]
+fn test_add_weight_entry_rejects_unrealistic_weight() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
+
+    let owner = Address::generate(&env);
+    let pet_id = client.register_pet(
+        &owner,
+        &String::from_str(&env, "Luna"),
+        &String::from_str(&env, "2021-03-20"),
+        &Gender::Female,
+        &Species::Cat,
+        &String::from_str(&env, "Siamese"),
+        &String::from_str(&env, "Cream"),
+        &6u32,
+        &None,
+        &PrivacyLevel::Public,
+    );
+
+    client.add_weight_entry(&pet_id, &1_000_000_000u32);
+}
+
 #[test]
 fn test_get_medications_pagination() {
     let env = Env::default();
@@ -416,16 +473,60 @@ fn test_log_feeding_updates_daily_summary() {
     assert_eq!(before.total_calories, 0u32);
     assert_eq!(before.target_calories, 1000u32);
 
-    assert!(client.log_feeding(&pet_id, &1u64, &1u32));
+    let now = env.ledger().timestamp();
+    assert!(client.log_feeding(&pet_id, &1u64, &1u32, &now));
 
     let after = client.get_daily_summary(&pet_id, &current_day).unwrap();
     assert_eq!(after.total_calories, 300u32);
     assert_eq!(after.target_calories, 1000u32);
 
-    assert!(client.log_feeding(&pet_id, &1u64, &2u32));
+    assert!(client.log_feeding(&pet_id, &1u64, &2u32, &now));
     let later = client.get_daily_summary(&pet_id, &current_day).unwrap();
     assert_eq!(later.total_calories, 900u32);
     assert_eq!(later.target_calories, 1000u32);
+}
+
+/// Issue #70: a feeding timestamp materially in the future must be rejected
+/// rather than silently accepted, since it would corrupt daily nutrition
+/// summaries, weight-gain projections, and feeder-integration schedules.
+#[test]
+#[should_panic(expected = "InvalidInput")]
+fn test_log_feeding_rejects_future_timestamp() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
+
+    let owner = Address::generate(&env);
+    let pet_id = client.register_pet(
+        &owner,
+        &String::from_str(&env, "Buddy"),
+        &String::from_str(&env, "2020-01-01"),
+        &Gender::Male,
+        &Species::Dog,
+        &String::from_str(&env, "Golden Retriever"),
+        &String::from_str(&env, "Golden"),
+        &25u32,
+        &None,
+        &PrivacyLevel::Public,
+    );
+
+    client.set_diet_plan(
+        &pet_id,
+        &String::from_str(&env, "Dry Kibble"),
+        &String::from_str(&env, "200g"),
+        &String::from_str(&env, "Twice daily"),
+        &300u32,
+        &1000u32,
+        &Vec::new(&env),
+        &Vec::new(&env),
+    );
+
+    // One day (86400s) past the current ledger time — well outside the
+    // clock-skew tolerance — must be rejected.
+    let future_timestamp = env.ledger().timestamp() + 86_400;
+    client.log_feeding(&pet_id, &1u64, &1u32, &future_timestamp);
 }
 
 #[test]
