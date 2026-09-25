@@ -214,8 +214,8 @@ const MAX_BATCH_ERROR_MESSAGES: usize = 50;
 ///
 /// Each attachment consumes a ledger entry, so an unbounded count would let an
 /// adversarial or buggy client flood one record and silently exhaust the pet
-/// owner's storage quota. `add_attachment` enforces this cap. (Issue #774)
-const MAX_ATTACHMENTS_PER_RECORD: u32 = 20;
+/// owner's storage quota. `add_attachment` enforces this cap. (Issue #774 / Wave 9 #99)
+const MAX_ATTACHMENTS_PER_RECORD: u32 = 10;
 
 /// Maximum number of milestone entries that can be stored in
 /// [`ActivityStreak::milestones_reached`].
@@ -356,6 +356,9 @@ pub enum ContractError {
     NoPreviousUpgrade = 41,
     QuorumNotMet = 45,
     RateLimitExceeded = 46,
+    /// Attachment count on a single medical record has reached MAX_ATTACHMENTS_PER_RECORD.
+    /// Adding another attachment is rejected (Wave 9 #99).
+    AttachmentLimitReached = 47,
 }
 
 // --- MULTI-LANGUAGE ERROR REGISTRY (Issue #684) ---
@@ -8702,8 +8705,14 @@ impl KoraContract {
     /// Only the vet who created the record may add attachments. The number of
     /// attachments per record is capped at [`MAX_ATTACHMENTS_PER_RECORD`]; a
     /// request that would exceed the cap fails with
-    /// [`ContractError::StorageQuotaExceeded`] so a single record cannot be
-    /// flooded to silently exhaust the owner's storage quota (Issue #774).
+    /// [`ContractError::AttachmentLimitReached`] (Wave 9 #99).
+    ///
+    /// `metadata.file_type` must be one of the approved veterinary MIME types;
+    /// unapproved types are rejected with [`ContractError::InvalidInput`]
+    /// (Wave 9 #100).
+    ///
+    /// Each accepted attachment increments the pet's storage quota counter
+    /// (Wave 9 #102).
     pub fn add_attachment(
         env: Env,
         record_id: u64,
@@ -8732,7 +8741,7 @@ impl KoraContract {
         // Only the authoring vet can attach files to the record.
         record.vet_address.require_auth();
 
-        // Validate metadata.
+        // Validate metadata basics.
         if metadata.filename.len() == 0
             || metadata.file_type.len() == 0
             || metadata.size == 0
@@ -8740,11 +8749,36 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::InvalidInput);
         }
 
-        // Enforce the per-record attachment cap before inserting so the count
-        // can never exceed MAX_ATTACHMENTS_PER_RECORD.
-        if record.attachment_hashes.len() >= MAX_ATTACHMENTS_PER_RECORD {
-            panic_with_error!(&env, ContractError::StorageQuotaExceeded);
+        // --- Issue #100: Enforce MIME type whitelist ---
+        // Only approved veterinary media types are accepted.
+        {
+            let ft_len = metadata.file_type.len() as usize;
+            if ft_len > 64 {
+                panic_with_error!(&env, ContractError::InvalidInput);
+            }
+            let mut ft_buf = [0u8; 64];
+            metadata.file_type.copy_into_slice(&mut ft_buf[..ft_len]);
+            let ft = core::str::from_utf8(&ft_buf[..ft_len]).unwrap_or_default();
+            let allowed = matches!(
+                ft,
+                "image/png"
+                    | "image/jpeg"
+                    | "application/pdf"
+                    | "image/dicom"
+                    | "application/dicom"
+            );
+            if !allowed {
+                panic_with_error!(&env, ContractError::InvalidInput);
+            }
         }
+
+        // --- Issue #99: Enforce the per-record attachment cap ---
+        if record.attachment_hashes.len() >= MAX_ATTACHMENTS_PER_RECORD {
+            panic_with_error!(&env, ContractError::AttachmentLimitReached);
+        }
+
+        // --- Issue #102: Increment pet storage quota ---
+        Self::increment_pet_storage(&env, record.pet_id);
 
         let attachment = Attachment {
             ipfs_hash,
@@ -8771,11 +8805,117 @@ impl KoraContract {
         true
     }
 
-    /// Return all attachments for a medical record (empty if it does not exist).
-    pub fn get_attachments(env: Env, record_id: u64) -> Vec<Attachment> {
-        match Self::get_medical_record(env.clone(), record_id) {
-            Some(record) => record.attachment_hashes,
-            None => Vec::new(&env),
+    /// Return all attachments for a medical record.
+    ///
+    /// `caller` must be authorized to read the record according to the pet's
+    /// privacy level (Wave 9 #101):
+    /// - `Public`     — anyone may call this.
+    /// - `Restricted` — caller must be the pet owner or hold a valid access grant.
+    /// - `Private`    — caller must be the pet owner.
+    ///
+    /// Returns an empty Vec if the record does not exist.
+    pub fn get_attachments(env: Env, record_id: u64, caller: Address) -> Vec<Attachment> {
+        let record = match Self::get_medical_record(env.clone(), record_id) {
+            Some(r) => r,
+            None => return Vec::new(&env),
+        };
+
+        // Resolve the pet to check its privacy level.
+        let pet: Option<Pet> = env
+            .storage()
+            .instance()
+            .get(&DataKey::Pet(record.pet_id));
+
+        if let Some(pet) = pet {
+            match pet.privacy_level {
+                PrivacyLevel::Public => {}
+                PrivacyLevel::Restricted => {
+                    // Owner or anyone with an active access grant may read.
+                    if pet.owner != caller {
+                        let access = Self::check_access(env.clone(), record.pet_id, caller.clone());
+                        if access == AccessLevel::None {
+                            panic_with_error!(&env, ContractError::Unauthorized);
+                        }
+                    }
+                }
+                PrivacyLevel::Private => {
+                    // Only the owner may read.
+                    if pet.owner != caller {
+                        panic_with_error!(&env, ContractError::Unauthorized);
+                    }
+                }
+            }
+        }
+
+        record.attachment_hashes
+    }
+
+    /// Return a single attachment by zero-based index for a medical record.
+    ///
+    /// Applies the same privacy-level access control as [`get_attachments`]
+    /// (Wave 9 #101). Returns `None` if the record does not exist or the index
+    /// is out of bounds.
+    pub fn get_attachment_by_index(
+        env: Env,
+        record_id: u64,
+        index: u32,
+        caller: Address,
+    ) -> Option<Attachment> {
+        let attachments = Self::get_attachments(env, record_id, caller);
+        attachments.get(index)
+    }
+
+    /// Remove an attachment at the given zero-based index from a medical record.
+    ///
+    /// Only the vet who created the record may remove attachments. Returns
+    /// `true` on success, `false` if the record or index is invalid.
+    pub fn remove_attachment(env: Env, record_id: u64, index: u32) -> bool {
+        let mut record: MedicalRecord = match env
+            .storage()
+            .instance()
+            .get(&MedicalKey::MedicalRecord(record_id))
+        {
+            Some(r) => r,
+            None => return false,
+        };
+
+        if index >= record.attachment_hashes.len() {
+            return false;
+        }
+
+        record.vet_address.require_auth();
+        record.attachment_hashes.remove(index);
+        record.updated_at = env.ledger().timestamp();
+
+        env.storage()
+            .instance()
+            .set(&MedicalKey::MedicalRecord(record_id), &record);
+
+        true
+    }
+
+    /// Verify that the attachment at `index` matches the expected `content_hash`.
+    ///
+    /// Returns `true` if the hash matches, `false` if the record, index, or
+    /// hash do not match.
+    pub fn verify_attachment(
+        env: Env,
+        record_id: u64,
+        index: u32,
+        content_hash: BytesN<32>,
+    ) -> bool {
+        let record: MedicalRecord = match env
+            .storage()
+            .instance()
+            .get(&MedicalKey::MedicalRecord(record_id))
+        {
+            Some(r) => r,
+            None => return false,
+        };
+
+        match record.attachment_hashes.get(index) {
+            Some(attachment) => attachment.content_hash == content_hash,
+            None => false,
         }
     }
 
