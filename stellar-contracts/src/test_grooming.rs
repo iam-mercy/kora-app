@@ -645,6 +645,110 @@ mod test_recurring_grooming {
         let result = client.advance_schedule(&schedule_id);
         assert_eq!(result, 0);
     }
+
+    // --- Issue #64: interval_days validation ---
+
+    #[test]
+    #[should_panic]
+    fn test_create_grooming_schedule_zero_interval_days_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id) = setup_pet(&env, &client);
+
+        let start = 1_000_000u64;
+        let end = start + 86400 * 30;
+
+        // Custom(0) should panic with ContractError::InvalidInput
+        client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Custom(0),
+            &start,
+            &end,
+            &String::from_str(&env, "Groomer A"),
+            &String::from_str(&env, "Bath"),
+            &5000,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_create_grooming_schedule_over_365_days_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id) = setup_pet(&env, &client);
+
+        let start = 1_000_000u64;
+        let end = start + 86400 * 400;
+
+        // Custom(366) exceeds 365-day limit
+        client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Custom(366),
+            &start,
+            &end,
+            &String::from_str(&env, "Groomer A"),
+            &String::from_str(&env, "Bath"),
+            &5000,
+        );
+    }
+
+    #[test]
+    fn test_create_grooming_schedule_14_interval_days_succeeds() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id) = setup_pet(&env, &client);
+
+        let start = 1_000_000u64;
+        let interval_secs = 14u64 * 24 * 3600;
+        let end = start + interval_secs * 10;
+
+        // Custom(14) = biweekly equivalent, must succeed
+        let schedule_id = client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Custom(14),
+            &start,
+            &end,
+            &String::from_str(&env, "Groomer A"),
+            &String::from_str(&env, "Bath"),
+            &5000,
+        );
+
+        assert!(schedule_id > 0);
+        let history = client.get_grooming_history(&pet_id);
+        assert_eq!(history.len(), 4);
+    }
+
+    #[test]
+    fn test_create_grooming_schedule_365_interval_days_boundary_succeeds() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id) = setup_pet(&env, &client);
+
+        let start = 1_000_000u64;
+        let interval_secs = 365u64 * 24 * 3600;
+        let end = start + interval_secs * 2;
+
+        // Custom(365) is at the boundary — must succeed
+        let schedule_id = client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Custom(365),
+            &start,
+            &end,
+            &String::from_str(&env, "Groomer A"),
+            &String::from_str(&env, "Annual Bath"),
+            &10000,
+        );
+
+        assert!(schedule_id > 0);
+    }
 }
 // -------------------------------------------------------
 // Grooming Slot Conflict Detection (Issue #792)

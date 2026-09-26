@@ -34,6 +34,24 @@ fn setup() -> (Env, KoraContractClient<'static>, Address, Address, Address, Addr
     (env, client, admin, owner, target, arbitrator, pet_id)
 }
 
+/// Convenience helper: raise a dispute and return its id.
+fn raise(
+    client: &KoraContractClient,
+    env: &Env,
+    pet_id: u64,
+    claimer: &Address,
+    target: &Address,
+) -> u64 {
+    client.raise_dispute(
+        &pet_id,
+        claimer,
+        target,
+        &500u64,
+        &String::from_str(env, "dispute reason"),
+        &String::from_str(env, "ipfs://evidence"),
+    )
+}
+
 #[test]
 fn test_raise_dispute_and_list_pet_disputes() {
     let (env, client, _admin, owner, target, _arbitrator, pet_id) = setup();
@@ -179,4 +197,90 @@ fn test_penalise_arbitrator_decreases_reputation() {
 
     let stats = client.get_arbitrator_stats(&arbitrator);
     assert_eq!(stats.reputation, 0);
+}
+
+// --- Issue #61: verify_evidence tests ---
+
+#[test]
+fn test_verify_evidence_by_arbitrator_succeeds() {
+    let (env, client, admin, owner, target, arbitrator, pet_id) = setup();
+    client.register_arbitrator(&admin, &arbitrator);
+
+    let dispute_id = raise(&client, &env, pet_id, &owner, &target);
+    // Submit evidence (transitions dispute to EvidencePhase)
+    client.submit_evidence(
+        &dispute_id,
+        &target,
+        &String::from_str(&env, "ipfs://forensic-doc"),
+    );
+
+    // Evidence ID is 1 (first submitted)
+    let result = client.verify_evidence(&dispute_id, &1u64, &arbitrator);
+    assert!(result, "Arbitrator should be able to verify evidence");
+
+    // The evidence record should now have verified=true
+    let evidence = client.get_evidence(&dispute_id, &1u64).unwrap();
+    assert!(evidence.verified);
+    assert!(evidence.verified_at.is_some());
+    assert_eq!(evidence.verified_by, Some(arbitrator));
+}
+
+#[test]
+#[should_panic]
+fn test_verify_evidence_non_arbitrator_fails() {
+    let (env, client, _admin, owner, target, _arbitrator, pet_id) = setup();
+
+    let dispute_id = raise(&client, &env, pet_id, &owner, &target);
+    client.submit_evidence(
+        &dispute_id,
+        &target,
+        &String::from_str(&env, "ipfs://forensic-doc"),
+    );
+
+    // Non-arbitrator attempting to verify should fail
+    let non_arbitrator = Address::generate(&env);
+    client.verify_evidence(&dispute_id, &1u64, &non_arbitrator);
+}
+
+#[test]
+#[should_panic]
+fn test_verify_evidence_nonexistent_evidence_fails() {
+    let (env, client, _admin, owner, target, arbitrator, pet_id) = setup();
+
+    let dispute_id = raise(&client, &env, pet_id, &owner, &target);
+
+    // No evidence submitted — evidence_id 99 does not exist
+    client.verify_evidence(&dispute_id, &99u64, &arbitrator);
+}
+
+// --- Issue #63: indexed dispute lookup (get_pet_disputes) ---
+
+#[test]
+fn test_get_pet_disputes_returns_only_that_pets_disputes() {
+    let (env, client, _admin, owner, target, _arbitrator, pet_id) = setup();
+
+    // Register a second pet
+    let owner2 = Address::generate(&env);
+    let pet_id2 = client.register_pet(
+        &owner2,
+        &String::from_str(&env, "Buddy"),
+        &String::from_str(&env, "2020-01-01"),
+        &Gender::Female,
+        &Species::Cat,
+        &String::from_str(&env, "Tabby"),
+        &String::from_str(&env, "Domestic"),
+        &5u32,
+        &None,
+        &PrivacyLevel::Public,
+    );
+
+    // Raise disputes for both pets
+    raise(&client, &env, pet_id, &owner, &target);
+    raise(&client, &env, pet_id, &owner, &target);
+    let stranger = Address::generate(&env);
+    raise(&client, &env, pet_id2, &owner2, &stranger);
+
+    // pet_id should have 2 disputes, pet_id2 should have 1
+    assert_eq!(client.get_pet_disputes(&pet_id).len(), 2);
+    assert_eq!(client.get_pet_disputes(&pet_id2).len(), 1);
 }
