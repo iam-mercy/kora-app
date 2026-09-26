@@ -929,6 +929,91 @@ fn test_streak_resets_on_gap_greater_than_one_day() {
     assert_eq!(streak.longest_streak, 1); // Longest remains 1
 }
 
+/// Issue #72: streak continuity must depend on calendar-day adjacency, not
+/// on how many wall-clock hours/seconds elapsed between activities. Crossing
+/// midnight with only seconds between activities must still count as a new
+/// consecutive day; skipping a full calendar day must reset the streak
+/// regardless of how the hours land within each day.
+#[test]
+fn test_streak_across_midnight_and_multi_day_boundaries() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, KoraContract);
+    let client = KoraContractClient::new(&env, &contract_id);
+
+    let owner = Address::generate(&env);
+    client.init_admin(&owner);
+
+    let pet_id = client.register_pet(
+        &owner,
+        &String::from_str(&env, "Max"),
+        &String::from_str(&env, "2020-01-01"),
+        &Gender::Male,
+        &Species::Dog,
+        &String::from_str(&env, "Golden Retriever"),
+        &String::from_str(&env, "Golden"),
+        &30,
+        &None,
+        &PrivacyLevel::Public,
+    );
+
+    let day_seconds: u64 = 86_400;
+    let day_10_start: u64 = 10 * day_seconds;
+
+    // Activity at 23:59:59 on day 10 — the last second of the calendar day.
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp = day_10_start + day_seconds - 1;
+    });
+    client.add_activity_record(
+        &pet_id,
+        &ActivityType::Walk,
+        &30,
+        &5,
+        &2000,
+        &String::from_str(&env, "Late night walk"),
+    );
+    assert_eq!(client.get_activity_streak(&pet_id).current_streak, 1);
+
+    // Only 2 seconds later, but now 00:00:01 on day 11 — crossed midnight.
+    // This must still count as the next consecutive calendar day.
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp = day_10_start + day_seconds + 1;
+    });
+    client.add_activity_record(
+        &pet_id,
+        &ActivityType::Walk,
+        &10,
+        &3,
+        &500,
+        &String::from_str(&env, "Just-after-midnight walk"),
+    );
+    assert_eq!(
+        client.get_activity_streak(&pet_id).current_streak,
+        2,
+        "crossing midnight with only seconds between activities must extend the streak"
+    );
+
+    // Jump forward to day 13 (skipping day 12 entirely) — a genuine
+    // multi-calendar-day gap, regardless of what hour it lands on.
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp = day_10_start + 3 * day_seconds + 12 * 3600; // day 13, 12:00
+    });
+    client.add_activity_record(
+        &pet_id,
+        &ActivityType::Walk,
+        &15,
+        &4,
+        &800,
+        &String::from_str(&env, "Post-gap walk"),
+    );
+    assert_eq!(
+        client.get_activity_streak(&pet_id).current_streak,
+        1,
+        "skipping a full calendar day must reset the streak"
+    );
+}
+
 #[test]
 fn test_milestone_event_at_7_days() {
     let env = Env::default();

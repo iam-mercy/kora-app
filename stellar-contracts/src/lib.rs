@@ -4476,8 +4476,27 @@ impl KoraContract {
     ) -> u64 {
         caller.require_auth();
 
-        if severity > 10 {
+        // Issue #70: severity is a 1-5 scale, not an arbitrary integer.
+        if !(1..=5).contains(&severity) {
             panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
+        // Issue #70: only the pet's owner may log behavior records for it.
+        // The issue also asks to allow a "certified trainer" role, but no
+        // such role exists anywhere in this contract today (there's an
+        // analogous verified-vet system for veterinarians, but nothing for
+        // trainers) — introducing one would mean a full registration/
+        // verification subsystem, well beyond this fix's scope. Restricting
+        // to the owner closes the actual reported hole (anyone authenticated
+        // could log records against *any* pet); a trainer role can be added
+        // as its own follow-up feature if wanted.
+        let pet: Pet = env
+            .storage()
+            .instance()
+            .get(&DataKey::Pet(pet_id))
+            .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
+        if caller != pet.owner {
+            panic_with_error!(&env, ContractError::Unauthorized);
         }
 
         let record_id: u64 = env
@@ -4534,6 +4553,54 @@ impl KoraContract {
             .instance()
             .get(&BehaviorKey::PetBehaviorCount(pet_id))
             .unwrap_or(0u64)
+    }
+
+    /// Returns a slice of a pet's behavior history: `limit` records starting
+    /// after `offset`, capped at 50 per call to stay within Soroban's
+    /// resource and return-size limits. (Issue #71)
+    ///
+    /// Unlike `get_behavior_history` (which loads every record) or
+    /// `get_behavior_records` (which loads every *matching* record before
+    /// slicing to a page), this reads only the records inside the requested
+    /// window directly from the per-pet index — so cost scales with `limit`,
+    /// not with the pet's total record count.
+    pub fn get_behavior_history_paginated(
+        env: Env,
+        pet_id: u64,
+        offset: u64,
+        limit: u32,
+    ) -> Vec<BehaviorRecord> {
+        let limit = limit.min(50);
+        let mut results = Vec::new(&env);
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&BehaviorKey::PetBehaviorCount(pet_id))
+            .unwrap_or(0u64);
+
+        // Per-pet behavior indices are 1-based (see add_behavior_record),
+        // so `offset` 0 means "start at the first record", index 1.
+        let start = offset.saturating_add(1);
+        let end = start
+            .saturating_add(limit as u64)
+            .min(count.saturating_add(1));
+
+        for i in start..end {
+            if let Some(record_id) = env
+                .storage()
+                .instance()
+                .get::<BehaviorKey, u64>(&BehaviorKey::PetBehaviorIndex((pet_id, i)))
+            {
+                if let Some(record) = env
+                    .storage()
+                    .instance()
+                    .get::<BehaviorKey, BehaviorRecord>(&BehaviorKey::BehaviorRecord(record_id))
+                {
+                    results.push_back(record);
+                }
+            }
+        }
+        results
     }
 
     /// Get the full (unbounded) behavior history for a pet.
@@ -9975,12 +10042,36 @@ impl KoraContract {
 
     /// Advance a schedule: generate the next appointment slot after the most recent one.
     /// Returns the new grooming record id, or 0 if schedule is inactive/past end_date.
-    pub fn advance_schedule(env: Env, schedule_id: u64) -> u64 {
+    /// `caller` must be the pet's owner or the schedule's registered groomer. (Issue #69)
+    pub fn advance_schedule(env: Env, caller: Address, schedule_id: u64) -> u64 {
+        caller.require_auth();
+
         let mut schedule: RecurringGroomingSchedule = env
             .storage()
             .instance()
             .get(&GroomingKey::RecurringSchedule(schedule_id))
             .unwrap_or_else(|| panic_with_error!(env, ContractError::InvalidInput));
+
+        let pet: Pet = env
+            .storage()
+            .instance()
+            .get(&DataKey::Pet(schedule.pet_id))
+            .unwrap_or_else(|| panic_with_error!(env, ContractError::PetNotFound));
+
+        // Caller must be either the pet owner, or the registered groomer for
+        // this schedule (matched by their on-chain GroomerProfile name, since
+        // `RecurringGroomingSchedule::groomer` only stores a display name,
+        // not an Address). (Issue #69)
+        let is_registered_groomer = env
+            .storage()
+            .instance()
+            .get::<GroomingKey, GroomerProfile>(&GroomingKey::Groomer(caller.clone()))
+            .map(|profile| profile.name == schedule.groomer)
+            .unwrap_or(false);
+
+        if caller != pet.owner && !is_registered_groomer {
+            panic_with_error!(env, ContractError::Unauthorized);
+        }
 
         if !schedule.is_active {
             return 0;
@@ -10855,15 +10946,24 @@ impl KoraContract {
         if last_day == 0 {
             // First-ever activity for this pet.
             streak.current_streak = 1;
-        } else if today == last_day {
-            // Same calendar day — streak already counted for today; no change.
-        } else if today == last_day + 1 {
-            // Consecutive day — extend streak.
-            streak.current_streak = streak.current_streak.saturating_add(1);
         } else {
-            // Gap of >1 day — streak resets to 1 (today counts as day 1 of a
-            // new streak but does not carry forward old milestone progress).
-            streak.current_streak = 1;
+            // Standardized day-difference calculation (Issue #72): compare
+            // whole UTC-day indices via saturating_sub rather than raw
+            // elapsed seconds/hours, so streak continuity depends only on
+            // calendar-day adjacency — not on how many wall-clock hours
+            // happened to fall between the two activities.
+            let days_diff = today.saturating_sub(last_day);
+            if days_diff == 0 {
+                // Same calendar day — streak already counted for today; no change.
+            } else if days_diff == 1 {
+                // Consecutive calendar day — extend streak.
+                streak.current_streak = streak.current_streak.saturating_add(1);
+            } else {
+                // Gap of >1 calendar day — streak resets to 1 (today counts as
+                // day 1 of a new streak but does not carry forward old
+                // milestone progress).
+                streak.current_streak = 1;
+            }
         }
 
         // Update longest streak.
