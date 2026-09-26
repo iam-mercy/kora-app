@@ -7,3 +7,32 @@ ISSUES.md
 node_modules
 .env
 somzilla.md
+
+# Test snapshots
+*.snap
+snapshots/
+__snapshots__/
+test_snapshots/
+
+# Rust build artifacts
+target/
+
+# Node
+node_modules/
+
+# Environment files
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Wasm output
+*.wasm
