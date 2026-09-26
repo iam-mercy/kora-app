@@ -6203,6 +6203,14 @@ impl KoraContract {
     #[allow(dead_code)]
     const MAX_SEARCH_TOKENS_PER_RECORD: u32 = 50;
 
+    /// Dispute resolution bounds
+    #[allow(dead_code)]
+    const MIN_APPEAL_WINDOW_SECS: u64 = 172_800;  // 2 days
+    #[allow(dead_code)]
+    const MAX_APPEAL_WINDOW_SECS: u64 = 2_592_000; // 30 days
+    #[allow(dead_code)]
+    const MAX_EVIDENCE_URI_LEN: u32 = 256;
+
     /// Validates that `value` does not exceed `max` bytes.
     ///
     /// `field` names the offending field so callers can surface a clear error.
@@ -9504,6 +9512,9 @@ impl KoraContract {
 
     pub fn set_appeal_window(env: Env, admin: Address, window_seconds: u64) -> bool {
         Self::require_admin_auth(&env, &admin);
+        if window_seconds < Self::MIN_APPEAL_WINDOW_SECS || window_seconds > Self::MAX_APPEAL_WINDOW_SECS {
+            env.panic_with_error(ContractError::InvalidInput);
+        }
         env.storage()
             .instance()
             .set(&DisputeKey::AppealWindow, &window_seconds);
@@ -9583,10 +9594,15 @@ impl KoraContract {
     }
 
     /// Admin override: forcibly resolves a dispute, bypassing the consensus
-    /// vote. Requires admin authorization. Use `vote_on_dispute` for the
+    /// vote. Requires admin authorization and arbitrator verification. Use `vote_on_dispute` for the
     /// standard multi-party consensus path.
-    pub fn resolve_dispute(env: Env, dispute_id: u64, status: DisputeStatus) -> bool {
-        Self::require_admin(&env);
+    pub fn resolve_dispute(env: Env, dispute_id: u64, arbitrator: Address, status: DisputeStatus) -> bool {
+        arbitrator.require_auth();
+
+        let assigned_arbitrator: Option<Address> = env.storage().instance().get(&DisputeKey::Arbitrator);
+        if assigned_arbitrator.is_none() || assigned_arbitrator.as_ref() != Some(&arbitrator) {
+            env.panic_with_error(ContractError::Unauthorized);
+        }
 
         let key = DisputeKey::Dispute(dispute_id);
         if let Some(mut dispute) = env.storage().instance().get::<DisputeKey, Dispute>(&key) {
@@ -9640,7 +9656,10 @@ impl KoraContract {
         );
 
         let vote_key = DisputeKey::DisputeVoteByVoter(dispute_id, voter.clone());
-        let is_new_voter = !env.storage().instance().has(&vote_key);
+        if env.storage().instance().has(&vote_key) {
+            env.panic_with_error(ContractError::Unauthorized);
+        }
+        let is_new_voter = true;
 
         env.storage().instance().set(
             &vote_key,
@@ -9773,6 +9792,14 @@ impl KoraContract {
         sha256_hash: BytesN<32>,
     ) -> u64 {
         submitter.require_auth();
+
+        if let Err(e) = Self::validate_len("cid", &cid, Self::MAX_EVIDENCE_URI_LEN) {
+            panic_with_error!(&env, e);
+        }
+
+        if !Self::is_valid_cid(&cid) {
+            env.panic_with_error(ContractError::InvalidInput);
+        }
 
         let dispute_key = DisputeKey::Dispute(dispute_id);
         let dispute: Dispute = env
