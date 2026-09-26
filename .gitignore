@@ -7,3 +7,30 @@ ISSUES.md
 node_modules
 .env
 somzilla.md
+
+# Test snapshots
+test_snapshots/
+**/.test_snapshots/
+*.snap
+*.snap.new
+
+# IDE / editor artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Coverage reports
+coverage/
+lcov.info
+*.profraw
+cobertura.xml
+
+# Wasm build artifacts (large binary, reproducibly built in CI)
+*.wasm
+*.optimized.wasm

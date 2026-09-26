@@ -269,6 +269,9 @@ pub enum ContractError {
     AdopterApprovalRequired = 32,
     InputStringTooLong = 33,
     AdoptionNotExpired = 34,
+    /// Returned when an attempt is made to expire or reclaim a transfer
+    /// that has an active (unresolved) dispute. (Issue #62)
+    TransferDisputed = 35,
 }
 
 /// ======================================================
@@ -802,6 +805,17 @@ impl PetOwnershipContract {
             .get(&DataKey::PendingTransfer(pet_id))
             .unwrap_or_else(|| panic_with_error!(env, ContractError::NoPendingTransfer));
 
+        // Issue #62: block expiry while an active dispute is in progress.
+        if let Some(escrowed) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, EscrowedTransfer>(&DataKey::EscrowedTransfer(pet_id))
+        {
+            if escrowed.disputed {
+                panic_with_error!(env, ContractError::TransferDisputed);
+            }
+        }
+
         let now = env.ledger().timestamp();
         if now.saturating_sub(transfer.initiated_at) < transfer.timeout_secs {
             panic_with_error!(env, ContractError::TransferNotExpired);
@@ -1284,6 +1298,17 @@ impl PetOwnershipContract {
             .unwrap_or_else(|| panic_with_error!(env, ContractError::NoPendingTransfer));
 
         transfer.from.require_auth();
+
+        // Issue #62: block reclaim while an active dispute is in progress.
+        if let Some(escrowed) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, EscrowedTransfer>(&DataKey::EscrowedTransfer(pet_id))
+        {
+            if escrowed.disputed {
+                panic_with_error!(env, ContractError::TransferDisputed);
+            }
+        }
 
         let now = env.ledger().timestamp();
         if now.saturating_sub(transfer.initiated_at) < TRANSFER_EXPIRY_SECONDS {

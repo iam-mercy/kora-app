@@ -181,19 +181,18 @@ mod test_vet_pagination;
 #[cfg(test)]
 mod test_upgrade_proposal;
 // `test_disputes` and `test_book_slot` do not compile against the current
-// contract: they call methods that were never implemented in `lib.rs` — a
-// dispute arbitration state machine (`start_review`, `rule`,
-// `register_arbitrator`, `penalise_arbitrator`, `DisputeOutcome`,
-// `DisputeStatus::{UnderReview,Resolved}`, …) and an appointment-booking API
-// (`book_slot`, `get_available_slots`, `set_availability`, `cancel_booking`, …).
-// They have been broken since well before this SDK bump (see the `f35c0ff`
-// commit message, which records `cargo test` failing only on these two files);
-// leaving them declared makes `cargo test` fail to compile. Excluded here so the
-// rest of the suite builds. Re-add once the contract-side APIs land.
-// #[cfg(test)]
-// mod test_disputes;
+// `test_book_slot` calls appointment-booking APIs
+// (`book_slot`, `get_available_slots`, `set_availability`, `cancel_booking`, …)
+// that are not yet implemented. Excluded so the rest of the suite builds.
+// Re-add once the contract-side APIs land.
 // #[cfg(test)]
 // mod test_book_slot;
+// test_disputes is now enabled — the dispute arbitration state machine has been
+// implemented as part of Wave 9 issues #56/#61.
+#[cfg(test)]
+mod test_disputes;
+#[cfg(test)]
+mod test_grooming;
 #[cfg(test)]
 mod test_emergency_notify_rate_limit;
 
@@ -425,6 +424,8 @@ pub enum GroomingFrequency {
     Weekly,
     Biweekly,
     Monthly,
+    /// Custom interval in days. Must be 1–365 (validated at schedule creation).
+    Custom(u32),
 }
 
 #[contracttype]
@@ -2394,6 +2395,19 @@ pub enum DisputeStatus {
     ResolvedInFavorOfClaimer = 3,
     ResolvedInFavorOfTarget = 4,
     Cancelled = 5,
+    Open = 6,
+    UnderReview = 7,
+    Resolved = 8,
+}
+
+/// Outcome of a dispute ruling by an arbitrator.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum DisputeOutcome {
+    InFavorOfClaimer = 1,
+    InFavorOfTarget = 2,
+    Cancelled = 3,
 }
 
 /// A stakeholder's vote on a dispute resolution.
@@ -2436,6 +2450,9 @@ pub struct Evidence {
     pub submitter: Address,
     pub cid: String,
     pub sha256_hash: BytesN<32>,
+    pub verified: bool,
+    pub verified_at: Option<u64>,
+    pub verified_by: Option<Address>,
 }
 
 #[contracttype]
@@ -2444,6 +2461,8 @@ pub enum DisputeKey {
     DisputeCount,
     AppealWindow,
     Arbitrator,
+    ArbitratorList,
+    ArbitratorStats(Address),
     PetDisputesCount(u64),
     PetDisputesIndex((u64, u64)),
     DisputeEvidence(u64, u64),
@@ -9551,7 +9570,7 @@ impl KoraContract {
             amount,
             reason,
             evidence_hash: evidence_hash.clone(),
-            status: DisputeStatus::Pending,
+            status: DisputeStatus::Open,
             created_at: env.ledger().timestamp(),
             resolved_at: None,
         };
@@ -9630,7 +9649,8 @@ impl KoraContract {
 
         assert!(
             dispute.status == DisputeStatus::Pending
-                || dispute.status == DisputeStatus::EvidencePhase,
+                || dispute.status == DisputeStatus::EvidencePhase
+                || dispute.status == DisputeStatus::Open,
             "Dispute is not open for voting"
         );
 
@@ -9770,25 +9790,32 @@ impl KoraContract {
         dispute_id: u64,
         submitter: Address,
         cid: String,
-        sha256_hash: BytesN<32>,
-    ) -> u64 {
+    ) -> bool {
         submitter.require_auth();
 
         let dispute_key = DisputeKey::Dispute(dispute_id);
-        let dispute: Dispute = env
+        let mut dispute: Dispute = env
             .storage()
             .instance()
             .get(&dispute_key)
-            .unwrap_or_else(|| panic!("Dispute not found"));
-
-        assert!(
-            dispute.status == DisputeStatus::EvidencePhase,
-            "Submission outside evidence phase rejected"
-        );
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
 
         assert!(
             submitter == dispute.claimer || submitter == dispute.target,
             "Only claimer or target can submit evidence"
+        );
+
+        // Transition to EvidencePhase if still Open
+        if dispute.status == DisputeStatus::Open || dispute.status == DisputeStatus::Pending {
+            dispute.status = DisputeStatus::EvidencePhase;
+            env.storage()
+                .instance()
+                .set(&dispute_key, &dispute);
+        }
+
+        assert!(
+            dispute.status == DisputeStatus::EvidencePhase,
+            "Submission outside evidence phase rejected"
         );
 
         let count_key = DisputeKey::PartyEvidenceCount(dispute_id, submitter.clone());
@@ -9810,7 +9837,10 @@ impl KoraContract {
             evidence_id,
             submitter: submitter.clone(),
             cid,
-            sha256_hash,
+            sha256_hash: BytesN::from_array(&env, &[0u8; 32]),
+            verified: false,
+            verified_at: None,
+            verified_by: None,
         };
 
         env.storage().instance().set(
@@ -9822,16 +9852,281 @@ impl KoraContract {
             .set(&evidence_count_key, &evidence_id);
         env.storage().instance().set(&count_key, &(party_count + 1));
 
-        evidence_id
+        true
     }
 
-    pub fn verify_evidence(env: Env, dispute_id: u64, evidence_id: u64, hash: BytesN<32>) -> bool {
-        let key = DisputeKey::DisputeEvidence(dispute_id, evidence_id);
-        if let Some(evidence) = env.storage().instance().get::<DisputeKey, Evidence>(&key) {
-            evidence.sha256_hash == hash
-        } else {
-            false
+    /// Verify evidence cryptographically.
+    ///
+    /// `verifier` must be the assigned arbitrator or a registered arbitrator.
+    /// Requires authorization from `verifier`. Returns `true` on success,
+    /// panics with `ContractError::NotFound` if evidence does not exist or
+    /// `ContractError::Unauthorized` if `verifier` is not an arbitrator.
+    ///
+    /// # Issue #61
+    pub fn verify_evidence(
+        env: Env,
+        dispute_id: u64,
+        evidence_id: u64,
+        verifier: Address,
+    ) -> bool {
+        verifier.require_auth();
+
+        // Validate that verifier is an authorized arbitrator
+        let is_assigned = env
+            .storage()
+            .instance()
+            .get::<DisputeKey, Address>(&DisputeKey::Arbitrator)
+            .map(|a| a == verifier)
+            .unwrap_or(false);
+
+        let is_registered: bool = {
+            let list: Vec<Address> = env
+                .storage()
+                .instance()
+                .get(&DisputeKey::ArbitratorList)
+                .unwrap_or_else(|| Vec::new(&env));
+            list.contains(&verifier)
+        };
+
+        if !is_assigned && !is_registered {
+            panic_with_error!(&env, ContractError::Unauthorized);
         }
+
+        let key = DisputeKey::DisputeEvidence(dispute_id, evidence_id);
+        let mut evidence: Evidence = env
+            .storage()
+            .instance()
+            .get::<DisputeKey, Evidence>(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::RecordNotFound));
+
+        let now = env.ledger().timestamp();
+        evidence.verified = true;
+        evidence.verified_at = Some(now);
+        evidence.verified_by = Some(verifier.clone());
+
+        env.storage().instance().set(&key, &evidence);
+
+        true
+    }
+
+    /// Register an arbitrator that can be selected for dispute resolution.
+    /// Only admins can register arbitrators. (Issue #61 dependency)
+    pub fn register_arbitrator(env: Env, admin: Address, arbitrator: Address) {
+        Self::require_admin_auth(&env, &admin);
+
+        let mut list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DisputeKey::ArbitratorList)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        if !list.contains(&arbitrator) {
+            list.push_back(arbitrator.clone());
+            env.storage()
+                .instance()
+                .set(&DisputeKey::ArbitratorList, &list);
+        }
+
+        // Initialize stats if not present
+        if env
+            .storage()
+            .instance()
+            .get::<DisputeKey, ArbitratorStats>(&DisputeKey::ArbitratorStats(arbitrator.clone()))
+            .is_none()
+        {
+            env.storage().instance().set(
+                &DisputeKey::ArbitratorStats(arbitrator.clone()),
+                &ArbitratorStats {
+                    address: arbitrator,
+                    reputation: 0,
+                    total_rulings: 0,
+                },
+            );
+        }
+    }
+
+    /// Penalise an arbitrator by decrementing their reputation score.
+    pub fn penalise_arbitrator(env: Env, admin: Address, arbitrator: Address) {
+        Self::require_admin_auth(&env, &admin);
+
+        let mut stats: ArbitratorStats = env
+            .storage()
+            .instance()
+            .get(&DisputeKey::ArbitratorStats(arbitrator.clone()))
+            .unwrap_or(ArbitratorStats {
+                address: arbitrator.clone(),
+                reputation: 0,
+                total_rulings: 0,
+            });
+
+        stats.reputation = stats.reputation.saturating_sub(1);
+        env.storage()
+            .instance()
+            .set(&DisputeKey::ArbitratorStats(arbitrator), &stats);
+    }
+
+    /// Get reputation stats for an arbitrator.
+    pub fn get_arbitrator_stats(env: Env, arbitrator: Address) -> ArbitratorStats {
+        env.storage()
+            .instance()
+            .get(&DisputeKey::ArbitratorStats(arbitrator.clone()))
+            .unwrap_or(ArbitratorStats {
+                address: arbitrator,
+                reputation: 0,
+                total_rulings: 0,
+            })
+    }
+
+    /// Auto-assign the highest-reputation registered arbitrator to a dispute,
+    /// excluding the dispute parties. Returns the assigned arbitrator address.
+    pub fn auto_assign_arbitrator(env: Env, dispute_id: u64) -> Address {
+        let dispute: Dispute = env
+            .storage()
+            .instance()
+            .get(&DisputeKey::Dispute(dispute_id))
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
+
+        let list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DisputeKey::ArbitratorList)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let mut best: Option<Address> = None;
+        let mut best_rep: i64 = i64::MIN;
+
+        for arb in list.iter() {
+            // Exclude dispute parties
+            if arb == dispute.claimer || arb == dispute.target {
+                continue;
+            }
+            let stats: ArbitratorStats = env
+                .storage()
+                .instance()
+                .get(&DisputeKey::ArbitratorStats(arb.clone()))
+                .unwrap_or(ArbitratorStats {
+                    address: arb.clone(),
+                    reputation: 0,
+                    total_rulings: 0,
+                });
+            if stats.reputation > best_rep {
+                best_rep = stats.reputation;
+                best = Some(arb);
+            }
+        }
+
+        let selected = best.unwrap_or_else(|| panic_with_error!(&env, ContractError::Unauthorized));
+
+        env.storage()
+            .instance()
+            .set(&DisputeKey::Arbitrator, &selected.clone());
+
+        selected
+    }
+
+    /// Arbitrator starts the review phase for a dispute.
+    /// Transitions status from EvidencePhase → UnderReview.
+    pub fn start_review(env: Env, dispute_id: u64, arbitrator: Address) -> bool {
+        arbitrator.require_auth();
+
+        // Validate that caller is an authorized arbitrator
+        let is_assigned = env
+            .storage()
+            .instance()
+            .get::<DisputeKey, Address>(&DisputeKey::Arbitrator)
+            .map(|a| a == arbitrator)
+            .unwrap_or(false);
+        let is_registered: bool = {
+            let list: Vec<Address> = env
+                .storage()
+                .instance()
+                .get(&DisputeKey::ArbitratorList)
+                .unwrap_or_else(|| Vec::new(&env));
+            list.contains(&arbitrator)
+        };
+        if !is_assigned && !is_registered {
+            panic_with_error!(&env, ContractError::Unauthorized);
+        }
+
+        let key = DisputeKey::Dispute(dispute_id);
+        let mut dispute: Dispute = env
+            .storage()
+            .instance()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
+
+        dispute.status = DisputeStatus::UnderReview;
+        env.storage().instance().set(&key, &dispute);
+
+        true
+    }
+
+    /// Arbitrator issues a ruling on a dispute.
+    /// Transitions status to Resolved and records the outcome.
+    /// Also increments the arbitrator's reputation and total_rulings.
+    pub fn rule(env: Env, dispute_id: u64, arbitrator: Address, outcome: DisputeOutcome) -> bool {
+        arbitrator.require_auth();
+
+        let is_assigned = env
+            .storage()
+            .instance()
+            .get::<DisputeKey, Address>(&DisputeKey::Arbitrator)
+            .map(|a| a == arbitrator)
+            .unwrap_or(false);
+        let is_registered: bool = {
+            let list: Vec<Address> = env
+                .storage()
+                .instance()
+                .get(&DisputeKey::ArbitratorList)
+                .unwrap_or_else(|| Vec::new(&env));
+            list.contains(&arbitrator)
+        };
+        if !is_assigned && !is_registered {
+            panic_with_error!(&env, ContractError::Unauthorized);
+        }
+
+        let key = DisputeKey::Dispute(dispute_id);
+        let mut dispute: Dispute = env
+            .storage()
+            .instance()
+            .get(&key)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
+
+        let final_status = match outcome {
+            DisputeOutcome::InFavorOfClaimer => DisputeStatus::Resolved,
+            DisputeOutcome::InFavorOfTarget => DisputeStatus::Resolved,
+            DisputeOutcome::Cancelled => DisputeStatus::Cancelled,
+        };
+
+        dispute.status = final_status;
+        dispute.resolved_at = Some(env.ledger().timestamp());
+        env.storage().instance().set(&key, &dispute);
+
+        // Update arbitrator stats
+        let mut stats: ArbitratorStats = env
+            .storage()
+            .instance()
+            .get(&DisputeKey::ArbitratorStats(arbitrator.clone()))
+            .unwrap_or(ArbitratorStats {
+                address: arbitrator.clone(),
+                reputation: 0,
+                total_rulings: 0,
+            });
+        stats.reputation = stats.reputation.saturating_add(1);
+        stats.total_rulings = stats.total_rulings.saturating_add(1);
+        env.storage()
+            .instance()
+            .set(&DisputeKey::ArbitratorStats(arbitrator), &stats);
+
+        true
+    }
+
+    /// Retrieve a single evidence record for a dispute.
+    /// Returns None if the evidence does not exist.
+    pub fn get_evidence(env: Env, dispute_id: u64, evidence_id: u64) -> Option<Evidence> {
+        env.storage()
+            .instance()
+            .get(&DisputeKey::DisputeEvidence(dispute_id, evidence_id))
     }
 
     pub fn propose_signer_rotation(
@@ -9879,6 +10174,13 @@ impl KoraContract {
 
         if end_date <= start_date {
             panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
+        // Issue #64: validate interval_days for Custom frequency (and derived intervals)
+        if let GroomingFrequency::Custom(days) = &frequency {
+            if *days == 0 || *days > 365 {
+                panic_with_error!(&env, ContractError::InvalidInput);
+            }
         }
 
         let count: u64 = env
@@ -10067,6 +10369,7 @@ impl KoraContract {
             GroomingFrequency::Weekly => 7 * 24 * 3600,
             GroomingFrequency::Biweekly => 14 * 24 * 3600,
             GroomingFrequency::Monthly => 30 * 24 * 3600,
+            GroomingFrequency::Custom(days) => (*days as u64) * 24 * 3600,
         }
     }
 

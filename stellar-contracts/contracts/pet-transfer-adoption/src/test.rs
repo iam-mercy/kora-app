@@ -1431,3 +1431,93 @@ fn custody_chain_is_capped_at_max_length() {
     let newest = chain.get(MAX_CUSTODY_CHAIN_LENGTH - 1).unwrap();
     assert_eq!(newest.to, new_owner);
 }
+
+// ======================================================
+// Issue #62: Pause transfer timers during active disputes
+// ======================================================
+
+#[test]
+fn reclaim_transfer_blocked_while_escrowed_transfer_is_disputed() {
+    let (env, owner, new_owner, pet_id) = setup();
+    let contract_id = env.register_contract(None, PetOwnershipContract);
+    let client = PetOwnershipContractClient::new(&env, &contract_id);
+
+    client.create_pet(&pet_id, &owner);
+    // Initiate and accept to create an escrowed transfer
+    client.initiate_transfer(&pet_id, &new_owner);
+    client.accept_transfer(&pet_id);
+
+    // Raise a dispute on the escrowed transfer
+    client.raise_dispute(&pet_id, &owner);
+    let escrowed = client.get_escrowed_transfer(&pet_id).unwrap();
+    assert!(escrowed.disputed);
+
+    // Also create a fresh pending transfer so reclaim_transfer has something to act on
+    // (simulate a direct pending transfer on the same pet with a forced timeout advance)
+    client.initiate_transfer(&pet_id, &new_owner);
+
+    // Advance time past TRANSFER_EXPIRY_SECONDS
+    env.ledger().with_mut(|l| {
+        l.timestamp += 7 * 24 * 60 * 60 + 1;
+    });
+
+    // reclaim_transfer should fail with TransferDisputed
+    let result = client.try_reclaim_transfer(&pet_id);
+    assert_eq!(
+        result,
+        Err(Ok(Error::from_contract_error(
+            ContractError::TransferDisputed as u32,
+        )))
+    );
+}
+
+#[test]
+fn cancel_expired_transfer_blocked_while_escrowed_transfer_is_disputed() {
+    let (env, owner, new_owner, pet_id) = setup();
+    let contract_id = env.register_contract(None, PetOwnershipContract);
+    let client = PetOwnershipContractClient::new(&env, &contract_id);
+
+    client.create_pet(&pet_id, &owner);
+    // Initiate and accept to create an escrowed transfer
+    client.initiate_transfer(&pet_id, &new_owner);
+    client.accept_transfer(&pet_id);
+
+    // Raise a dispute on the escrowed transfer
+    client.raise_dispute(&pet_id, &owner);
+    let escrowed = client.get_escrowed_transfer(&pet_id).unwrap();
+    assert!(escrowed.disputed);
+
+    // Create a pending transfer and advance time past its timeout
+    client.initiate_transfer_with_timeout(&pet_id, &new_owner, &1u32);
+    env.ledger().with_mut(|l| {
+        l.timestamp += 1 * 24 * 60 * 60 + 1;
+    });
+
+    // cancel_expired_transfer should fail with TransferDisputed
+    let result = client.try_cancel_expired_transfer(&pet_id);
+    assert_eq!(
+        result,
+        Err(Ok(Error::from_contract_error(
+            ContractError::TransferDisputed as u32,
+        )))
+    );
+}
+
+#[test]
+fn reclaim_transfer_allowed_when_no_active_dispute() {
+    let (env, owner, new_owner, pet_id) = setup();
+    let contract_id = env.register_contract(None, PetOwnershipContract);
+    let client = PetOwnershipContractClient::new(&env, &contract_id);
+
+    client.create_pet(&pet_id, &owner);
+    client.initiate_transfer(&pet_id, &new_owner);
+
+    // Advance time past TRANSFER_EXPIRY_SECONDS (no dispute active)
+    env.ledger().with_mut(|l| {
+        l.timestamp += 7 * 24 * 60 * 60 + 1;
+    });
+
+    // Should succeed — no dispute
+    client.reclaim_transfer(&pet_id);
+    assert!(!client.has_pending_transfer(&pet_id));
+}
