@@ -6549,6 +6549,10 @@ impl KoraContract {
             panic!("Veterinarian not verified");
         }
 
+        if expires_at <= administered_at {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
         let _pet: Pet = env
             .storage()
             .instance()
@@ -7702,6 +7706,30 @@ impl KoraContract {
             }
         }
         history
+    }
+
+    pub fn get_weight_history_paginated(
+        env: Env,
+        pet_id: u64,
+        offset: u64,
+        limit: u32,
+    ) -> Vec<WeightEntry> {
+        // Clamp limit: treat 0 or >100 as 100
+        let effective_limit: u64 = if limit == 0 || limit > 100 { 100 } else { limit as u64 };
+
+        let full_history = KoraContract::get_weight_history(env.clone(), pet_id);
+        let total = full_history.len() as u64;
+
+        if offset >= total {
+            return Vec::new(&env);
+        }
+
+        let mut page = Vec::new(&env);
+        let end = (offset + effective_limit).min(total);
+        for i in offset..end {
+            page.push_back(full_history.get(i as u32).unwrap());
+        }
+        page
     }
 
     pub fn get_weight_entry(env: Env, weight_id: u64) -> Option<WeightEntry> {
