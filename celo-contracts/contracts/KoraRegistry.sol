@@ -91,11 +91,6 @@ contract KoraRegistry is Pausable {
     mapping(uint256 => uint256) private _recordIndex; // recordId => index in _petRecords[petId]
     mapping(bytes32 => address)  private _licenseToVet;
 
-    // recordId → petId, so correctMedicalRecord can locate the record
-    mapping(uint256 => uint256) private _recordPetId;
-    // recordId → index inside _petRecords[petId]
-    mapping(uint256 => uint256) private _recordIndex;
-
     // Ordered list of all ever-registered vet addresses (issue #926)
     address[] private _vetAddresses;
 
@@ -484,19 +479,13 @@ contract KoraRegistry is Pausable {
         string calldata notes
     ) external {
         uint256 petId = _recordPet[recordId];
+        require(petId != 0, "KoraRegistry: record does not exist");
+
         MedicalRecord storage rec = _petRecords[petId][_recordIndex[recordId]];
         require(rec.recordId == recordId, "KoraRegistry: record not found");
         require(
             msg.sender == rec.vet || msg.sender == admin,
-            "KoraRegistry: not authorized"
-        );
-        uint256 petId = _recordPetId[recordId];
-        require(petId != 0, "KoraRegistry: record does not exist");
-
-        MedicalRecord storage rec = _petRecords[petId][_recordIndex[recordId]];
-        require(
-            msg.sender == rec.vet || msg.sender == admin,
-            "KoraRegistry: not authorised to correct record"
+            "KoraRegistry: not authorized to correct record"
         );
 
         require(bytes(diagnosis).length > 0 && bytes(diagnosis).length <= MAX_LONG_LEN,
@@ -506,14 +495,6 @@ contract KoraRegistry is Pausable {
         require(bytes(notes).length <= MAX_LONG_LEN,
             "KoraRegistry: notes too long");
 
-        emit MedicalRecordCorrected(
-            recordId, msg.sender,
-            rec.diagnosis, rec.treatment, rec.notes,
-            diagnosis, treatment, notes
-        );
-        rec.diagnosis = diagnosis;
-        rec.treatment = treatment;
-        rec.notes     = notes;
         string memory origDiagnosis = rec.diagnosis;
         string memory origTreatment = rec.treatment;
         string memory origNotes     = rec.notes;
