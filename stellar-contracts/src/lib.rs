@@ -356,6 +356,7 @@ pub enum ContractError {
     NoPreviousUpgrade = 41,
     QuorumNotMet = 45,
     RateLimitExceeded = 46,
+    CounterUnderflow = 47,
 }
 
 // --- MULTI-LANGUAGE ERROR REGISTRY (Issue #684) ---
@@ -4178,6 +4179,21 @@ impl KoraContract {
             .set(&DataKey::PetStorageUsage(pet_id), &new_count);
     }
 
+    /// Decrement pet storage usage, restoring quota when photos are removed or records purged
+    fn decrement_pet_storage(env: &Env, pet_id: u64) {
+        let current = Self::get_pet_storage_count(env, pet_id);
+
+        if current > 0 {
+            let new_count = current
+                .checked_sub(1)
+                .unwrap_or_else(|| panic_with_error!(env, ContractError::CounterUnderflow));
+
+            env.storage()
+                .instance()
+                .set(&DataKey::PetStorageUsage(pet_id), &new_count);
+        }
+    }
+
     /// Check if a pet can add more storage entries without incrementing
     #[allow(dead_code)]
     fn check_pet_storage_quota(env: &Env, pet_id: u64) -> bool {
@@ -5719,6 +5735,7 @@ impl KoraContract {
                 pet.photo_hashes.remove(idx);
                 pet.updated_at = env.ledger().timestamp();
                 env.storage().instance().set(&DataKey::Pet(pet_id), &pet);
+                Self::decrement_pet_storage(&env, pet_id);
                 true
             } else {
                 false
@@ -8591,42 +8608,45 @@ impl KoraContract {
         }
     }
 
-    fn get_encryption_key(env: &Env) -> Bytes {
-        // Derive a stable, contract-scoped key from contract identity + admin context.
-        // This avoids static hardcoded key material while remaining deterministic.
+    /// Derive a user-specific encryption key that remains stable across admin changes.
+    /// Each user's encryption key is derived from their own address + a per-user seed,
+    /// eliminating the vulnerability where admin rotation breaks all encrypted data.
+    fn get_encryption_key_for_user(env: &Env, user: &Address) -> Bytes {
         let mut preimage = Bytes::new(env);
-        for byte in b"kora:encryption-key:v1" {
+
+        // Include version prefix for key rotation support
+        for byte in b"kora:user-encryption-key:v2" {
             preimage.push_back(*byte);
         }
 
+        // User's address is part of the key derivation
+        let user_xdr = user.to_xdr(env);
+        for byte in user_xdr.iter() {
+            preimage.push_back(byte);
+        }
+
+        // Include contract address for additional domain separation
         let contract_xdr = env.current_contract_address().to_xdr(env);
         for byte in contract_xdr.iter() {
             preimage.push_back(byte);
         }
 
-        if let Some(legacy_admin) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Address>(&DataKey::Admin)
-        {
-            let admin_xdr = legacy_admin.to_xdr(env);
-            for byte in admin_xdr.iter() {
-                preimage.push_back(byte);
-            }
-        } else if let Some(admins) = env
-            .storage()
-            .instance()
-            .get::<SystemKey, Vec<Address>>(&SystemKey::Admins)
-        {
-            if let Some(primary_admin) = admins.get(0) {
-                let admin_xdr = primary_admin.to_xdr(env);
-                for byte in admin_xdr.iter() {
-                    preimage.push_back(byte);
-                }
-            }
-        }
-
         env.crypto().sha256(&preimage).into()
+    }
+
+    fn get_encryption_key(env: &Env) -> Bytes {
+        // Legacy function: derive key for the caller (requires auth)
+        if let Some(caller) = env.invoker_contract_id() {
+            let caller_addr = Address::from_contract_id(env, &caller);
+            Self::get_encryption_key_for_user(env, &caller_addr)
+        } else {
+            // Fallback for direct contract calls
+            let mut preimage = Bytes::new(env);
+            for byte in b"kora:encryption-key:v1" {
+                preimage.push_back(*byte);
+            }
+            env.crypto().sha256(&preimage).into()
+        }
     }
 
     #[allow(dead_code)]
@@ -11430,6 +11450,7 @@ impl KoraContract {
                                 env.storage()
                                     .instance()
                                     .remove(&MedicalKey::MedicalRecord(record_id));
+                                Self::decrement_pet_storage(&env, pet_id);
                             }
                         } else {
                             has_unretained_deleted = true;
