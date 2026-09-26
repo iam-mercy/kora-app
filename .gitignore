@@ -7,3 +7,36 @@ ISSUES.md
 node_modules
 .env
 somzilla.md
+
+# Test snapshots
+**/__snapshots__/
+*.snap
+
+# Rust build artifacts
+# (target/ and stellar-contracts/target/ already listed above)
+
+# Node artifacts
+celo-contracts/node_modules/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Env files
+.env.local
+.env.*
+!.env.example
+
+# Hardhat artifacts
+celo-contracts/artifacts/
+celo-contracts/cache/
+
+# Coverage
+coverage/
+lcov.info

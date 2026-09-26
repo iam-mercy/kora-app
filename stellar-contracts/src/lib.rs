@@ -7944,6 +7944,17 @@ impl KoraContract {
 
         pet.owner.require_auth();
 
+        // Validate target_version is within valid range before proceeding
+        let current_version: u64 = env
+            .storage()
+            .instance()
+            .get(&NutritionKey::PetNutritionVersionCount(pet_id))
+            .unwrap_or(0);
+
+        if target_version == 0 || target_version >= current_version {
+            env.panic_with_error(ContractError::InvalidInput);
+        }
+
         // Verify target version exists
         let target = env
             .storage()
@@ -7955,11 +7966,6 @@ impl KoraContract {
             .unwrap_or_else(|| env.panic_with_error(ContractError::InvalidInput));
 
         // Create new version with target's data
-        let current_version: u64 = env
-            .storage()
-            .instance()
-            .get(&NutritionKey::PetNutritionVersionCount(pet_id))
-            .unwrap_or(0);
         let new_version = current_version + 1;
         let now = env.ledger().timestamp();
 
