@@ -7379,11 +7379,23 @@ impl KoraContract {
         test_type: String,
         results: String,
         reference_ranges: String,
+        ref_min: u32,
+        ref_max: u32,
         attachment_hash: Option<String>,
         medical_record_id: Option<u64>,
         biomarkers: Map<String, i128>,
     ) -> u64 {
         vet_address.require_auth();
+
+        // Issue #93: only verified veterinarians may record lab results.
+        if !Self::is_verified_vet(env.clone(), vet_address.clone()) {
+            panic_with_error!(&env, ContractError::VetNotVerified);
+        }
+
+        // Issue #92: reference range must be a valid interval.
+        if ref_min >= ref_max {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
 
         // --- allocate ID ---
         let lab_count: u64 = env
@@ -7457,6 +7469,13 @@ impl KoraContract {
                     },
                 );
             }
+
+            // Issue #94: normalized position within reference range [ref_min, ref_max].
+            // Guard against division by zero when max == min (qualitative / binary tests).
+            let range = ref_max as i128 - ref_min as i128;
+            if range > 0 {
+                let _normalized = (new_value - ref_min as i128) * 100 / range;
+            }
         }
 
         // --- store the new lab result ---
@@ -7497,11 +7516,37 @@ impl KoraContract {
     pub fn get_lab_results(
         env: Env,
         pet_id: u64,
+        caller: Address,
         offset: u64,
         limit: u32,
         from_timestamp: Option<u64>,
         to_timestamp: Option<u64>,
     ) -> Vec<LabResult> {
+        // Issue #95: authenticate the caller and enforce pet privacy.
+        caller.require_auth();
+
+        // Load the pet to check its privacy level.
+        if let Some(pet) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
+        {
+            let allowed = match pet.privacy_level {
+                PrivacyLevel::Public => true,
+                PrivacyLevel::Restricted => {
+                    let access = KoraContract::check_access(env.clone(), pet_id, caller.clone());
+                    !matches!(access, AccessLevel::None)
+                }
+                PrivacyLevel::Private => {
+                    pet.owner == caller
+                        || Self::is_verified_vet(env.clone(), caller.clone())
+                }
+            };
+            if !allowed {
+                panic_with_error!(&env, ContractError::Unauthorized);
+            }
+        }
+
         if let (Some(from), Some(to)) = (from_timestamp, to_timestamp) {
             if from > to {
                 panic_with_error!(&env, ContractError::InvalidInput);
@@ -14052,6 +14097,8 @@ mod test_lab_result_anomaly {
             &String::from_str(env, "Blood Test"),
             &String::from_str(env, "Normal"),
             &String::from_str(env, "0-200"),
+            &0u32,
+            &200u32,
             &None,
             &None,
             &bm,

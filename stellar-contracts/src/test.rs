@@ -350,6 +350,9 @@ mod test {
         let contract_id = env.register_contract(None, KoraContract);
         let client = KoraContractClient::new(&env, &contract_id);
 
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
         let owner = Address::generate(&env);
         let vet = Address::generate(&env);
 
@@ -366,19 +369,31 @@ mod test {
             &PrivacyLevel::Public,
         );
 
+        client.register_vet(
+            &vet,
+            &String::from_str(&env, "Dr. Test"),
+            &String::from_str(&env, "LIC-TEST"),
+            &String::from_str(&env, "General"),
+        );
+        client.verify_vet(&admin, &vet);
+
         let lab_id = client.add_lab_result(
             &pet_id,
             &vet,
             &String::from_str(&env, "Blood Test"),
             &String::from_str(&env, "Normal"),
+            &String::from_str(&env, "0-200"),
+            &0u32,
+            &200u32,
+            &None,
             &None,
         );
 
         let res = client.get_lab_result(&lab_id).unwrap();
         assert_eq!(res.test_type, String::from_str(&env, "Blood Test"));
-        assert_eq!(res.result_summary, String::from_str(&env, "Normal"));
+        assert_eq!(res.results, String::from_str(&env, "Normal"));
 
-        let list = client.get_pet_lab_results(&pet_id);
+        let list = client.get_lab_results(&pet_id, &owner, &0u64, &10u32, &None, &None);
         assert_eq!(list.len(), 1);
     }
 

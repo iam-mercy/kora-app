@@ -285,6 +285,11 @@ fn test_get_pet_health_summary_complete() {
         &vet,
         &String::from_str(&env, "Blood Test"),
         &String::from_str(&env, "Normal"),
+        &String::from_str(&env, "0-200"),
+        &0u32,
+        &200u32,
+        &None,
+        &None,
     );
 
     // Add insurance policy
@@ -431,6 +436,11 @@ fn test_get_pet_health_summary_latest_lab_result() {
         &vet,
         &String::from_str(&env, "Blood Test 1"),
         &String::from_str(&env, "Normal"),
+        &String::from_str(&env, "0-200"),
+        &0u32,
+        &200u32,
+        &None,
+        &None,
     );
 
     // Advance time
@@ -444,6 +454,11 @@ fn test_get_pet_health_summary_latest_lab_result() {
         &vet,
         &String::from_str(&env, "Blood Test 2"),
         &String::from_str(&env, "Normal"),
+        &String::from_str(&env, "0-200"),
+        &0u32,
+        &200u32,
+        &None,
+        &None,
     );
 
     let summary = client.get_pet_health_summary(&pet_id, &caller).unwrap();

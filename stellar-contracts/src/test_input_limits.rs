@@ -263,6 +263,8 @@ fn test_lab_result_fields_at_limit_accepted() {
         &repeat(&env, b't', 100),
         &repeat(&env, b'r', 1000),
         &repeat(&env, b'f', 1000),
+        &0u32,
+        &100u32,
         &None,
         &None,
     );
@@ -282,6 +284,8 @@ fn test_lab_result_test_type_over_limit_rejected() {
         &repeat(&env, b't', 101),
         &String::from_str(&env, "results"),
         &String::from_str(&env, "ranges"),
+        &0u32,
+        &100u32,
         &None,
         &None,
     );
@@ -300,6 +304,8 @@ fn test_lab_result_results_over_limit_rejected() {
         &String::from_str(&env, "CBC"),
         &repeat(&env, b'r', 1001),
         &String::from_str(&env, "ranges"),
+        &0u32,
+        &100u32,
         &None,
         &None,
     );
@@ -318,6 +324,8 @@ fn test_lab_result_reference_ranges_over_limit_rejected() {
         &String::from_str(&env, "CBC"),
         &String::from_str(&env, "results"),
         &repeat(&env, b'f', 1001),
+        &0u32,
+        &100u32,
         &None,
         &None,
     );
@@ -767,6 +775,8 @@ fn test_lab_result_results_at_limit_accepted() {
         &String::from_str(&env, "CBC"),
         &repeat(&env, b'r', 1000),
         &String::from_str(&env, "ranges"),
+        &0u32,
+        &100u32,
         &None,
         &None,
     );
@@ -785,6 +795,8 @@ fn test_lab_result_reference_ranges_at_limit_accepted() {
         &String::from_str(&env, "CBC"),
         &String::from_str(&env, "results"),
         &repeat(&env, b'f', 1000),
+        &0u32,
+        &100u32,
         &None,
         &None,
     );

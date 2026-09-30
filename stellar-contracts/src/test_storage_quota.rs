@@ -202,6 +202,8 @@ fn test_storage_usage_increments_on_lab_result() {
         &String::from_str(&env, "Blood Test"),
         &String::from_str(&env, "Normal"),
         &String::from_str(&env, "Reference ranges"),
+        &0u32,
+        &100u32,
         &None,
         &None,
     );

@@ -64,6 +64,8 @@ mod test_biomarker_trend {
             &String::from_str(env, "Blood Test"),
             &String::from_str(env, "results"),
             &String::from_str(env, "0.0-1.0"),
+            &0u32,
+            &100u32,
             &None,
             &None,
         );
@@ -138,6 +140,8 @@ mod test_biomarker_trend {
                 &String::from_str(&env, "Blood Test"),
                 &String::from_str(&env, "Normal"),
                 &String::from_str(&env, "0-10"),
+                &0u32,
+                &100u32,
                 &None,
                 &None,
             );
@@ -166,6 +170,8 @@ mod test_biomarker_trend {
             &String::from_str(&env, "Blood Test"),
             &String::from_str(&env, "Normal"),
             &String::from_str(&env, "0-10"),
+            &0u32,
+            &100u32,
             &None,
             &None,
         );
@@ -193,6 +199,8 @@ mod test_biomarker_trend {
                 &String::from_str(&env, "Blood Test"),
                 &String::from_str(&env, "Normal"),
                 &String::from_str(&env, "0-10"),
+                &0u32,
+                &100u32,
                 &None,
                 &None,
             );
