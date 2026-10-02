@@ -52,6 +52,25 @@ The following functions are guaranteed to have no side effects. They do not writ
 
 > **Audit note:** All `log_access` (storage write) calls were removed from the above functions. Write functions (`add_medical_record`, `update_pet_profile`, `grant_access`, `revoke_access`, `add_attachment`, etc.) retain their access log writes.
 
+## Medical record retrieval authorization
+
+The backend endpoint `GET /pets/{petId}/medical-records` is an authenticated
+adapter around Soroban's `get_pet_medical_records(pet_id, offset, limit)`.
+Clients must send `Authorization: Bearer <signature>` and `caller_address`.
+The backend verifies the signature and performs the privacy/access check before
+calling the read; `caller_address` must not be trusted as an unsigned identity.
+
+- **Public pets:** records may be returned after signature verification.
+- **Restricted pets:** the caller needs an active access grant with read access.
+- **Private pets:** only the pet owner may retrieve records.
+- **401 Unauthorized:** missing, malformed, or invalid signature.
+- **403 Forbidden:** authenticated caller lacks access to the pet.
+
+Emergency access is a separate, audited flow. Supply `emergency_caller` and a
+non-empty `reason` when requesting the emergency view. The backend must verify
+that caller's authorization, pass the authenticated caller to the contract, and
+record the access; these parameters do not bypass contract checks.
+
 ---
 
 ## Smart Contracts

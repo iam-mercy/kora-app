@@ -52,6 +52,41 @@ npx hardhat test
 
 - The repo contains a Rust Soroban crate and a separate Hardhat/Solidity project; build and test them separately.
 
+## Contract initialization
+
+Set `CONTRACT_ID` and use valid Soroban address arguments. The address that
+submits an initialization call must authorize the transaction.
+
+### Single administrator
+
+```bash
+stellar contract invoke --id "$CONTRACT_ID" --source "$ADMIN_SECRET" --network testnet -- init_admin --admin "$ADMIN_ADDRESS"
+```
+
+`init_admin` accepts exactly one argument: `admin: Address`.
+
+### Multisig administrators
+
+The invoker must appear in the admin list, and `threshold` must be at least one
+and no greater than the number of admins.
+
+```bash
+stellar contract invoke --id "$CONTRACT_ID" --source "$ADMIN_SECRET" --network testnet -- init_multisig --invoker "$ADMIN_ADDRESS" --admins '["'$ADMIN_ADDRESS'", "'$SECOND_ADMIN_ADDRESS'"]' --threshold 2
+```
+
+For a three-phase bootstrap, propose the same configuration and then have the
+required admins confirm it:
+
+```bash
+stellar contract invoke --id "$CONTRACT_ID" --source "$ADMIN_SECRET" --network testnet -- propose_init --admins '["'$ADMIN_ADDRESS'", "'$SECOND_ADMIN_ADDRESS'"]' --threshold 2
+stellar contract invoke --id "$CONTRACT_ID" --source "$ADMIN_SECRET" --network testnet -- confirm_init --confirmer "$ADMIN_ADDRESS"
+```
+
+The contract signatures are `propose_init(admins: Vec<Address>, threshold:
+u32)`, `confirm_init(confirmer: Address)`, `init_admin(admin: Address)`, and
+`init_multisig(invoker: Address, admins: Vec<Address>, threshold: u32)`. Do not
+invoke `propose_init` without `admins` and `threshold`.
+
 ## Wasm Size Audit
 
 The transfer/adoption contract is audited with `twiggy` after building the

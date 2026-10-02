@@ -459,7 +459,7 @@ fn test_ownership_history_after_multisig_transfer() {
     client.sign_transfer_proposal(&proposal_id, &signer1);
     client.multisig_transfer_pet(&proposal_id);
 
-    let history = client.get_ownership_history(&pet_id, &0u64, &10u32);
+    let history = client.get_ownership_history(&pet_id, &owner, &0u64, &10u32);
     assert_eq!(history.len(), 2);
 
     let last_record = history.get(1).unwrap();
@@ -491,14 +491,14 @@ fn test_ownership_history_pagination() {
     client.multisig_transfer_pet(&proposal_id2);
 
     // Total 3 records (initial registration + 2 transfers)
-    let history_all = client.get_ownership_history(&pet_id, &0u64, &10u32);
+    let history_all = client.get_ownership_history(&pet_id, &owner, &0u64, &10u32);
     assert_eq!(history_all.len(), 3);
 
-    let history_paged = client.get_ownership_history(&pet_id, &1u64, &1u32);
+    let history_paged = client.get_ownership_history(&pet_id, &owner, &1u64, &1u32);
     assert_eq!(history_paged.len(), 1);
     assert_eq!(history_paged.get(0).unwrap().new_owner, new_owner);
 
-    let history_empty = client.get_ownership_history(&pet_id, &5u64, &1u32);
+    let history_empty = client.get_ownership_history(&pet_id, &owner, &5u64, &1u32);
     assert_eq!(history_empty.len(), 0);
 }
 

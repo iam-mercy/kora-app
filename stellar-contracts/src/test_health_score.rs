@@ -84,6 +84,8 @@ fn health_score_uses_all_components_and_cache_ttl() {
         &String::from_str(&env, "CBC"),
         &String::from_str(&env, "All values within range"),
         &String::from_str(&env, "{}"),
+        &0u32,
+        &100u32,
         &None,
         &None,
     );

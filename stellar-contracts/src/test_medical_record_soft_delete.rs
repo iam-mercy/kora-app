@@ -328,8 +328,8 @@ fn test_custom_retention_period_respected() {
         &PrivacyLevel::Public,
     );
 
-    // Set retention to 1 day
-    client.set_retention_period(&admin, &86_400u64);
+    // Set retention to the minimum legal period (Issue #102 floor: 365 days).
+    client.set_retention_period(&admin, &(365 * 86_400u64));
 
     let rid = client.add_medical_record(
         &pet_id,
@@ -341,9 +341,9 @@ fn test_custom_retention_period_respected() {
     );
     client.delete_medical_record(&pet_id, &rid, &owner);
 
-    // Advance 2 days — past the 1-day custom retention
+    // Advance past the 365-day custom retention window.
     env.ledger()
-        .with_mut(|l| l.timestamp = 1_700_000_000 + 2 * 86_400);
+        .with_mut(|l| l.timestamp = 1_700_000_000 + 365 * 86_400 + 1);
     let purged = client.purge_expired_records(&pet_id, &owner);
     assert_eq!(purged, 1);
 }

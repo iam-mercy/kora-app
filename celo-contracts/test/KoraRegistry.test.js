@@ -101,6 +101,18 @@ describe("KoraRegistry", function () {
       const ids = await registry.getPetRecordsByDateRange(petId, t2 + 1000, t2 + 2000);
       expect(ids.length).to.equal(0);
     });
+
+    it("bounds results when limit parameter is provided", async function () {
+      const ids = await registry["getPetRecordsByDateRange(uint256,uint256,uint256,uint256)"](petId, 0, t2, 2);
+      expect(ids.length).to.equal(2);
+      expect(ids[0]).to.equal(1);
+      expect(ids[1]).to.equal(2);
+    });
+
+    it("returns empty array when limit is 0", async function () {
+      const ids = await registry["getPetRecordsByDateRange(uint256,uint256,uint256,uint256)"](petId, 0, t2, 0);
+      expect(ids.length).to.equal(0);
+    });
   });
 
   // Issue #924 — core flows & access-control revert paths
@@ -118,6 +130,32 @@ describe("KoraRegistry", function () {
     it("reverts registering with an empty license number", async function () {
       await expect(registry.connect(other).registerVet("", "General Practice"))
         .to.be.revertedWith("KoraRegistry: empty licenseNumber");
+    });
+
+    it("reverts registering with a license number exceeding 64 characters", async function () {
+      await expect(registry.connect(other).registerVet("A".repeat(65), "General Practice"))
+        .to.be.revertedWith("KoraRegistry: invalid license length");
+    });
+
+    it("reverts registering with a 500-byte license number", async function () {
+      await expect(registry.connect(other).registerVet("A".repeat(500), "General Practice"))
+        .to.be.revertedWith("KoraRegistry: invalid license length");
+    });
+
+    it("reverts registering with a specialization exceeding 128 characters", async function () {
+      await expect(registry.connect(other).registerVet("LIC-VALID", "A".repeat(129)))
+        .to.be.revertedWith("KoraRegistry: invalid specialization length");
+    });
+
+    it("accepts license numbers up to 64 chars and specialization up to 128 chars", async function () {
+      const maxLic = "L".repeat(64);
+      const maxSpec = "S".repeat(128);
+      await expect(registry.connect(other).registerVet(maxLic, maxSpec))
+        .to.emit(registry, "VetRegistered")
+        .withArgs(other.address, maxLic);
+      const v = await registry.vets(other.address);
+      expect(v.licenseNumber).to.equal(maxLic);
+      expect(v.specialization).to.equal(maxSpec);
     });
 
     it("admin verifies a vet and emits VetVerified", async function () {
@@ -162,24 +200,37 @@ describe("KoraRegistry", function () {
       expect(await registry.getPetsByOwner(owner.address)).to.deep.equal([petId]);
     });
 
-    it("transfers a pet and emits PetTransferred", async function () {
+    it("requires recipient acceptance before transferring a pet", async function () {
       const petId = await registerPet();
-      await expect(registry.connect(owner).transferPet(petId, other.address))
-        .to.emit(registry, "PetTransferred")
+      await expect(registry.connect(owner).initiatePetTransfer(petId, other.address))
+        .to.emit(registry, "PetTransferInitiated")
+        .withArgs(petId, owner.address, other.address);
+      expect((await registry.pets(petId)).owner).to.equal(owner.address);
+      await expect(registry.connect(other).acceptPetTransfer(petId))
+        .to.emit(registry, "PetTransferAccepted")
         .withArgs(petId, owner.address, other.address);
       expect((await registry.pets(petId)).owner).to.equal(other.address);
     });
 
-    it("transferPet reverts on the zero address", async function () {
+    it("initiatePetTransfer reverts on the zero address", async function () {
       const petId = await registerPet();
-      await expect(registry.connect(owner).transferPet(petId, ethers.ZeroAddress))
+      await expect(registry.connect(owner).initiatePetTransfer(petId, ethers.ZeroAddress))
         .to.be.revertedWith("KoraRegistry: zero address");
     });
 
     it("onlyPetOwner: non-owner cannot transfer", async function () {
       const petId = await registerPet();
-      await expect(registry.connect(other).transferPet(petId, other.address))
+      await expect(registry.connect(other).initiatePetTransfer(petId, admin.address))
         .to.be.revertedWith("KoraRegistry: not pet owner");
+    });
+
+    it("allows the owner to cancel a pending transfer", async function () {
+      const petId = await registerPet();
+      await registry.connect(owner).initiatePetTransfer(petId, other.address);
+      await expect(registry.connect(owner).cancelPetTransfer(petId))
+        .to.emit(registry, "PetTransferCancelled")
+        .withArgs(petId, owner.address, other.address);
+      expect((await registry.pets(petId)).pendingOwner).to.equal(ethers.ZeroAddress);
     });
 
     it("onlyPetOwner: non-owner cannot deactivate", async function () {
@@ -219,6 +270,50 @@ describe("KoraRegistry", function () {
       await registry.connect(owner).deactivatePet(petId);
       await expect(registry.connect(vet).addMedicalRecord(petId, 0, "flu", "rest", ""))
         .to.be.revertedWith("KoraRegistry: pet inactive");
+    });
+
+    it("reverts adding a record for a non-existent pet", async function () {
+      await expect(registry.connect(vet).addMedicalRecord(999999, 0, "flu", "rest", ""))
+        .to.be.revertedWith("KoraRegistry: pet does not exist");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Wave 9 Issue #119 (#124) — Prevent orphan medical records
+  // ---------------------------------------------------------------------------
+  describe("Wave 9 Issue #119 (#124) — Prevent orphan medical records", function () {
+    it("reverts with 'KoraRegistry: pet does not exist' when petId does not exist", async function () {
+      await expect(
+        registry.connect(vet).addMedicalRecord(999999, 0, "routine checkup", "all good", "healthy")
+      ).to.be.revertedWith("KoraRegistry: pet does not exist");
+    });
+
+    it("reverts when adding record to deactivated pet", async function () {
+      const petId = await registerPet();
+      await registry.connect(owner).deactivatePet(petId);
+      await expect(
+        registry.connect(vet).addMedicalRecord(petId, 0, "routine checkup", "all good", "healthy")
+      ).to.be.revertedWith("KoraRegistry: pet inactive");
+    });
+
+    it("successfully creates and links medical record for existing active pet", async function () {
+      const petId = await registerPet();
+      const tx = await registry.connect(vet).addMedicalRecord(
+        petId, 1, "rabies vaccination", "injected 1ml", "annual booster"
+      );
+      const receipt = await tx.wait();
+      const event = receipt.logs.find(
+        l => l.fragment && l.fragment.name === "MedicalRecordAdded"
+      );
+      expect(event).to.not.be.undefined;
+      const recordId = event.args.recordId;
+
+      const records = await registry.getPetRecords(petId);
+      expect(records.length).to.equal(1);
+      expect(records[0].recordId).to.equal(recordId);
+      expect(records[0].petId).to.equal(petId);
+      expect(records[0].diagnosis).to.equal("rabies vaccination");
+      expect(records[0].vet).to.equal(vet.address);
     });
   });
 
@@ -285,6 +380,49 @@ describe("KoraRegistry", function () {
       await registry.connect(owner).deactivatePet(petId);
       await expect(registry.connect(other).reactivatePet(petId))
         .to.be.revertedWith("KoraRegistry: not pet owner");
+    });
+
+    it("reverts with 'KoraRegistry: pet does not exist' for a non-existent petId", async function () {
+      await expect(registry.connect(owner).reactivatePet(999999))
+        .to.be.revertedWith("KoraRegistry: pet does not exist");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Wave 9 Issue #118 (#123) — Validate pet existence in deactivatePet and reactivatePet
+  // ---------------------------------------------------------------------------
+  describe("Wave 9 Issue #118 (#123) — Validate pet existence in deactivatePet and reactivatePet", function () {
+    it("deactivatePet reverts with 'KoraRegistry: pet does not exist' when petId does not exist", async function () {
+      await expect(registry.connect(owner).deactivatePet(999999))
+        .to.be.revertedWith("KoraRegistry: pet does not exist");
+    });
+
+    it("reactivatePet reverts with 'KoraRegistry: pet does not exist' when petId does not exist", async function () {
+      await expect(registry.connect(owner).reactivatePet(999999))
+        .to.be.revertedWith("KoraRegistry: pet does not exist");
+    });
+
+    it("initiatePetTransfer reverts with 'KoraRegistry: pet does not exist' when petId does not exist", async function () {
+      await expect(registry.connect(owner).initiatePetTransfer(999999, other.address))
+        .to.be.revertedWith("KoraRegistry: pet does not exist");
+    });
+
+    it("cancelPetTransfer reverts with 'KoraRegistry: pet does not exist' when petId does not exist", async function () {
+      await expect(registry.connect(owner).cancelPetTransfer(999999))
+        .to.be.revertedWith("KoraRegistry: pet does not exist");
+    });
+
+    it("existing pets deactivate and reactivate normally", async function () {
+      const petId = await registerPet();
+      await expect(registry.connect(owner).deactivatePet(petId))
+        .to.emit(registry, "PetDeactivated")
+        .withArgs(petId);
+      expect((await registry.pets(petId)).active).to.equal(false);
+
+      await expect(registry.connect(owner).reactivatePet(petId))
+        .to.emit(registry, "PetReactivated")
+        .withArgs(petId);
+      expect((await registry.pets(petId)).active).to.equal(true);
     });
   });
 
@@ -371,7 +509,8 @@ describe("KoraRegistry", function () {
     it("pet no longer appears in previous owner's getPetsByOwner after transfer", async function () {
       const petId = await registerPet();
 
-      await registry.connect(owner).transferPet(petId, other.address);
+      await registry.connect(owner).initiatePetTransfer(petId, other.address);
+      await registry.connect(other).acceptPetTransfer(petId);
 
       const fromPets = await registry.getPetsByOwner(owner.address);
       expect(fromPets.map(id => id.toString())).to.not.include(petId.toString());
@@ -383,8 +522,10 @@ describe("KoraRegistry", function () {
     it("multiple transfers leave no stale entries in intermediate owners", async function () {
       const petId = await registerPet();
 
-      await registry.connect(owner).transferPet(petId, other.address);
-      await registry.connect(other).transferPet(petId, admin.address);
+      await registry.connect(owner).initiatePetTransfer(petId, other.address);
+      await registry.connect(other).acceptPetTransfer(petId);
+      await registry.connect(other).initiatePetTransfer(petId, admin.address);
+      await registry.connect(admin).acceptPetTransfer(petId);
 
       const ownerPets = await registry.getPetsByOwner(owner.address);
       const otherPets = await registry.getPetsByOwner(other.address);
@@ -625,6 +766,22 @@ describe("KoraRegistry", function () {
         );
     });
 
+    it("blocks correction while paused and resumes after unpause", async function () {
+      await registry.connect(admin).pause();
+      await expect(
+        registry.connect(vet).correctMedicalRecord(
+          recordId, "Paused diag", "Paused treat", ""
+        )
+      ).to.be.revertedWithCustomError(registry, "EnforcedPause");
+
+      await registry.connect(admin).unpause();
+      await expect(
+        registry.connect(vet).correctMedicalRecord(
+          recordId, "Unpaused diag", "Unpaused treat", ""
+        )
+      ).to.not.be.reverted;
+    });
+
     it("allows empty notes in correction (notes is optional)", async function () {
       await expect(
         registry.connect(vet).correctMedicalRecord(
@@ -718,23 +875,30 @@ describe("KoraRegistry", function () {
   });
 
   // ---------------------------------------------------------------------------
-  // Admin transfer — transferAdmin
+  // Admin transfer — proposeAdmin / acceptAdmin
   // ---------------------------------------------------------------------------
   describe("transferAdmin", function () {
-    it("emits AdminTransferred with correct previous and new admin", async function () {
-      await expect(registry.connect(admin).transferAdmin(other.address))
-        .to.emit(registry, "AdminTransferred")
+    it("proposes without changing admin and emits AdminTransferProposed", async function () {
+      await expect(registry.connect(admin).proposeAdmin(other.address))
+        .to.emit(registry, "AdminTransferProposed")
         .withArgs(admin.address, other.address);
+      expect(await registry.admin()).to.equal(admin.address);
+      expect(await registry.pendingAdmin()).to.equal(other.address);
     });
 
-    it("updates the admin state variable", async function () {
-      await registry.connect(admin).transferAdmin(other.address);
+    it("accepts the proposal and emits AdminTransferred", async function () {
+      await registry.connect(admin).proposeAdmin(other.address);
+      await expect(registry.connect(other).acceptAdmin())
+        .to.emit(registry, "AdminTransferred")
+        .withArgs(admin.address, other.address);
       expect(await registry.admin()).to.equal(other.address);
+      expect(await registry.pendingAdmin()).to.equal(ethers.ZeroAddress);
     });
 
     it("old admin loses onlyAdmin access after transfer", async function () {
       await registry.connect(vet).registerVet("LIC-NEW", "General Practice");
-      await registry.connect(admin).transferAdmin(other.address);
+      await registry.connect(admin).proposeAdmin(other.address);
+      await registry.connect(other).acceptAdmin();
       // original admin can no longer call verifyVet
       await expect(
         registry.connect(admin).verifyVet(vet.address)
@@ -743,23 +907,37 @@ describe("KoraRegistry", function () {
 
     it("new admin can exercise onlyAdmin functions", async function () {
       await registry.connect(vet).registerVet("LIC-NEW", "General Practice");
-      await registry.connect(admin).transferAdmin(other.address);
+      await registry.connect(admin).proposeAdmin(other.address);
+      await registry.connect(other).acceptAdmin();
       // new admin (other) can now verify vets
       await expect(
         registry.connect(other).verifyVet(vet.address)
       ).to.not.be.reverted;
     });
 
-    it("reverts when called by non-admin", async function () {
-      await expect(
-        registry.connect(owner).transferAdmin(other.address)
-      ).to.be.revertedWith("KoraRegistry: not admin");
+    it("reverts when a non-admin proposes a transfer", async function () {
+      await expect(registry.connect(owner).proposeAdmin(other.address))
+        .to.be.revertedWith("KoraRegistry: not admin");
     });
 
-    it("reverts when newAdmin is the zero address", async function () {
-      await expect(
-        registry.connect(admin).transferAdmin(ethers.ZeroAddress)
-      ).to.be.revertedWith("KoraRegistry: zero address");
+    it("reverts when a non-pending account accepts", async function () {
+      await registry.connect(admin).proposeAdmin(other.address);
+      await expect(registry.connect(owner).acceptAdmin())
+        .to.be.revertedWith("KoraRegistry: not pending admin");
+    });
+
+    it("reverts when proposing the zero address", async function () {
+      await expect(registry.connect(admin).proposeAdmin(ethers.ZeroAddress))
+        .to.be.revertedWith("KoraRegistry: zero address");
+    });
+
+    it("overwrites a previous pending proposal", async function () {
+      await registry.connect(admin).proposeAdmin(other.address);
+      await registry.connect(admin).proposeAdmin(owner.address);
+      await expect(registry.connect(other).acceptAdmin())
+        .to.be.revertedWith("KoraRegistry: not pending admin");
+      await registry.connect(owner).acceptAdmin();
+      expect(await registry.admin()).to.equal(owner.address);
     });
   });
 
@@ -794,7 +972,7 @@ describe("KoraRegistry", function () {
       const petId = await registerPet();
       await registry.connect(admin).pause();
       await expect(
-        registry.connect(owner).transferPet(petId, other.address)
+        registry.connect(owner).initiatePetTransfer(petId, other.address)
       ).to.be.revertedWithCustomError(registry, "EnforcedPause");
     });
 
@@ -858,76 +1036,42 @@ describe("KoraRegistry", function () {
   });
 
   // ---------------------------------------------------------------------------
-  // Issue #920 — correctMedicalRecord
+  // Wave 9 Issue #121 (#126) — Vet string length validation
   // ---------------------------------------------------------------------------
-  describe("#920 — correctMedicalRecord", function () {
-    let petId, recordId;
-
-    beforeEach(async function () {
-      petId = await registerPet();
-      const tx = await registry.connect(vet).addMedicalRecord(
-        petId, "wrong diagnosis", "wrong treatment", "wrong notes"
-      );
-      const receipt = await tx.wait();
-      const event = receipt.logs.find(
-        l => l.fragment && l.fragment.name === "MedicalRecordAdded"
-      );
-      recordId = event.args.recordId;
+  describe("Wave 9 Issue #121 (#126) — Vet string length validation", function () {
+    it("rejects license numbers exceeding 64 characters", async function () {
+      await expect(registry.connect(other).registerVet("A".repeat(65), "General Practice"))
+        .to.be.revertedWith("KoraRegistry: invalid license length");
     });
 
-    it("original vet can correct the record and emits MedicalRecordCorrected", async function () {
-      await expect(
-        registry.connect(vet).correctMedicalRecord(
-          recordId, "correct diagnosis", "correct treatment", "correct notes"
-        )
-      )
-        .to.emit(registry, "MedicalRecordCorrected")
-        .withArgs(
-          recordId, vet.address,
-          "wrong diagnosis", "wrong treatment", "wrong notes",
-          "correct diagnosis", "correct treatment", "correct notes"
-        );
-
-      const records = await registry.getPetRecords(petId);
-      expect(records[0].diagnosis).to.equal("correct diagnosis");
-      expect(records[0].treatment).to.equal("correct treatment");
-      expect(records[0].notes).to.equal("correct notes");
+    it("rejects 500-byte license number as specified in testing requirements", async function () {
+      await expect(registry.connect(other).registerVet("A".repeat(500), "General Practice"))
+        .to.be.revertedWith("KoraRegistry: invalid license length");
     });
 
-    it("admin can correct the record", async function () {
-      await expect(
-        registry.connect(admin).correctMedicalRecord(
-          recordId, "admin fix", "admin treatment", ""
-        )
-      ).to.emit(registry, "MedicalRecordCorrected");
+    it("rejects specialization exceeding 128 characters in registerVet", async function () {
+      await expect(registry.connect(other).registerVet("LIC-SPECIAL", "A".repeat(129)))
+        .to.be.revertedWith("KoraRegistry: invalid specialization length");
     });
 
-    it("unauthorized caller cannot correct the record", async function () {
-      await expect(
-        registry.connect(other).correctMedicalRecord(
-          recordId, "hack", "hack", ""
-        )
-      ).to.be.revertedWith("KoraRegistry: not authorized");
+    it("rejects specialization exceeding 128 characters in updateSpecialization", async function () {
+      await expect(registry.connect(vet).updateSpecialization("A".repeat(129)))
+        .to.be.revertedWith("KoraRegistry: invalid specialization length");
     });
 
-    it("reverts on empty diagnosis", async function () {
-      await expect(
-        registry.connect(vet).correctMedicalRecord(recordId, "", "treatment", "")
-      ).to.be.revertedWith("KoraRegistry: invalid diagnosis length");
-    });
-
-    it("reverts on empty treatment", async function () {
-      await expect(
-        registry.connect(vet).correctMedicalRecord(recordId, "diagnosis", "", "")
-      ).to.be.revertedWith("KoraRegistry: invalid treatment length");
-    });
-
-    it("reverts on notes over MAX_LONG_LEN", async function () {
-      await expect(
-        registry.connect(vet).correctMedicalRecord(
-          recordId, "diagnosis", "treatment", "a".repeat(1001)
-        )
-      ).to.be.revertedWith("KoraRegistry: notes too long");
+    it("accepts valid boundary string lengths (64-byte license, 128-byte specialization)", async function () {
+      const boundaryLic = "X".repeat(64);
+      const boundarySpec = "Y".repeat(128);
+      await expect(registry.connect(other).registerVet(boundaryLic, boundarySpec))
+        .to.emit(registry, "VetRegistered")
+        .withArgs(other.address, boundaryLic);
+      const v = await registry.vets(other.address);
+      expect(v.licenseNumber).to.equal(boundaryLic);
+      expect(v.specialization).to.equal(boundarySpec);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Issue #920 — correctMedicalRecord
+  // ---------------------------------------------------------------------------
 });

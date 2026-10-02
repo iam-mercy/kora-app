@@ -1,0 +1,36 @@
+name: Error code docs
+
+# Keeps docs/error-codes.md honest. The document is the reference clients use to
+# map a numeric contract error back to a variant, so a renumbered enum that the
+# document does not follow is a silent breaking change.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docs/error-codes.md
+      - scripts/check_error_codes.py
+      - stellar-contracts/src/**/*.rs
+      - stellar-contracts/contracts/pet-transfer-adoption/src/**/*.rs
+  pull_request:
+    paths:
+      - docs/error-codes.md
+      - scripts/check_error_codes.py
+      - stellar-contracts/src/**/*.rs
+      - stellar-contracts/contracts/pet-transfer-adoption/src/**/*.rs
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compare the error tables with the contract enums
+        run: python3 scripts/check_error_codes.py

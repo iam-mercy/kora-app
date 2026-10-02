@@ -4,36 +4,55 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+# The steps that compile pull-request code only get a read-only token. The job
+# allowed to write back to the pull request never runs that code.
 permissions:
-  pull-requests: write
-  issues: write
   contents: read
 
+concurrency:
+  group: pr-review-bot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
-  review:
+  checks:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: stellar-contracts
     steps:
+      # `cargo fmt`, `cargo clippy` and `cargo test` all compile and execute
+      # code taken from the pull request (build scripts, proc macros), so the
+      # checkout must not leave the GITHUB_TOKEN behind in .git/config.
       - uses: actions/checkout@v4
-      
+        with:
+          persist-credentials: false
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          
+
       - name: Check formatting
         run: cargo fmt --check
-          
+
       - name: Run clippy
         run: cargo clippy -- -D warnings
-          
+
       - name: Run tests
         run: cargo test
-          
+
+  report:
+    needs: checks
+    runs-on: ubuntu-latest
+    # A `pull_request` run triggered by a fork receives a read-only token, so
+    # commenting is only possible for branches inside this repository. Skip the
+    # comment explicitly instead of letting it fail with a 403.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
       - name: Comment PR
-        if: success() && github.event.pull_request.head.repo.full_name == github.repository
-        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |

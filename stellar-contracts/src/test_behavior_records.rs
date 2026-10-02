@@ -38,7 +38,7 @@ fn test_get_behavior_records_pagination() {
             &pet_id,
             &owner,
             &BehaviorType::Training,
-            &(i % 10),
+            &((i % 5) + 1),
             &String::from_str(&env, "Training session"),
         );
     }
@@ -74,7 +74,7 @@ fn test_get_behavior_records_type_filter() {
         &pet_id,
         &owner,
         &BehaviorType::Aggression,
-        &7,
+        &3,
         &String::from_str(&env, "Barking"),
     );
     client.add_behavior_record(
@@ -122,7 +122,7 @@ fn test_get_behavior_records_pagination_with_type_filter() {
             &pet_id,
             &owner,
             &BehaviorType::Training,
-            &i,
+            &(i + 1),
             &String::from_str(&env, "Training"),
         );
     }
@@ -131,7 +131,7 @@ fn test_get_behavior_records_pagination_with_type_filter() {
             &pet_id,
             &owner,
             &BehaviorType::Anxiety,
-            &i,
+            &(i + 1),
             &String::from_str(&env, "Anxiety"),
         );
     }
@@ -167,4 +167,96 @@ fn test_get_behavior_records_page_size_capped() {
     assert_eq!(page.items.len(), 50);
     assert_eq!(page.page_size, 50);
     assert_eq!(page.total, 60);
+}
+
+/// Issue #71: get_behavior_history_paginated must return the correct slice
+/// across multiple pages, and cap `limit` at 50 regardless of what's asked.
+#[test]
+fn test_get_behavior_history_paginated_across_pages() {
+    let (env, client, owner, _admin, pet_id) = setup();
+
+    for i in 0..5u32 {
+        client.add_behavior_record(
+            &pet_id,
+            &owner,
+            &BehaviorType::Training,
+            &((i % 5) + 1),
+            &String::from_str(&env, "Training session"),
+        );
+    }
+
+    // First page: offset 0, limit 2 → first 2 records.
+    let page0 = client.get_behavior_history_paginated(&pet_id, &0u64, &2u32);
+    assert_eq!(page0.len(), 2);
+
+    // Second page: offset 2, limit 2 → next 2 records (distinct from page0).
+    let page1 = client.get_behavior_history_paginated(&pet_id, &2u64, &2u32);
+    assert_eq!(page1.len(), 2);
+    assert_ne!(page0.get(0).unwrap().id, page1.get(0).unwrap().id);
+
+    // Last page: offset 4, limit 2 → only 1 record left.
+    let page2 = client.get_behavior_history_paginated(&pet_id, &4u64, &2u32);
+    assert_eq!(page2.len(), 1);
+
+    // Past the end: offset 10 → empty, not an error.
+    let page3 = client.get_behavior_history_paginated(&pet_id, &10u64, &2u32);
+    assert_eq!(page3.len(), 0);
+
+    // Requesting more than 50 is silently capped, not rejected.
+    for _ in 0..46u32 {
+        client.add_behavior_record(
+            &pet_id,
+            &owner,
+            &BehaviorType::Training,
+            &3u32,
+            &String::from_str(&env, "Bulk record"),
+        );
+    }
+    let capped = client.get_behavior_history_paginated(&pet_id, &0u64, &100u32);
+    assert_eq!(capped.len(), 50);
+}
+
+/// Issue #70: severity is a 1-5 scale; 0 is below it and must be rejected.
+#[test]
+#[should_panic(expected = "InvalidInput")]
+fn test_add_behavior_record_rejects_severity_zero() {
+    let (env, client, owner, _admin, pet_id) = setup();
+    client.add_behavior_record(
+        &pet_id,
+        &owner,
+        &BehaviorType::Training,
+        &0u32,
+        &String::from_str(&env, "Invalid severity"),
+    );
+}
+
+/// Issue #70: severity is a 1-5 scale; 10 is above it and must be rejected
+/// (previously only values > 10 were rejected).
+#[test]
+#[should_panic(expected = "InvalidInput")]
+fn test_add_behavior_record_rejects_severity_ten() {
+    let (env, client, owner, _admin, pet_id) = setup();
+    client.add_behavior_record(
+        &pet_id,
+        &owner,
+        &BehaviorType::Training,
+        &10u32,
+        &String::from_str(&env, "Invalid severity"),
+    );
+}
+
+/// Issue #70: only the pet's owner may log a behavior record for it — an
+/// unrelated authenticated caller must be rejected.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_add_behavior_record_rejects_non_owner_caller() {
+    let (env, client, _owner, _admin, pet_id) = setup();
+    let stranger = Address::generate(&env);
+    client.add_behavior_record(
+        &pet_id,
+        &stranger,
+        &BehaviorType::Training,
+        &3u32,
+        &String::from_str(&env, "Not my pet"),
+    );
 }

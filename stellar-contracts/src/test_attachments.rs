@@ -340,14 +340,13 @@ fn test_get_attachment_count_nonexistent_record() {
 fn test_attachment_with_various_file_types() {
     let (env, client, _owner, _vet, _pet_id, record_id) = setup_test_env();
 
-    // Test various medical file types
+    // Test whitelisted veterinary file types
     let file_types = [
         ("xray.jpg", "image/jpeg"),
         ("scan.png", "image/png"),
         ("report.pdf", "application/pdf"),
-        ("results.xml", "application/xml"),
-        ("data.json", "application/json"),
-        ("image.dicom", "application/dicom"),
+        ("image.dicom", "image/dicom"),
+        ("image2.dicom", "application/dicom"),
     ];
 
     for (i, (filename, file_type)) in file_types.iter().enumerate() {
@@ -360,17 +359,15 @@ fn test_attachment_with_various_file_types() {
             "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdP"
         } else if i == 3 {
             "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdJ"
-        } else if i == 4 {
-            "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdK"
         } else {
-            "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdL"
+            "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdK"
         };
         let ipfs_hash = String::from_str(&env, hash_str);
         client.add_attachment(&record_id, &ipfs_hash, &metadata, &BytesN::from_array(&env, &[1u8; 32]));
     }
 
     let attachments = client.get_attachments(&record_id, &_owner);
-    assert_eq!(attachments.len(), 6);
+    assert_eq!(attachments.len(), 5);
 }
 
 #[test]
@@ -585,7 +582,7 @@ fn test_get_attachment_by_index_last() {
             "QmPK1s3pNYLi9ERiq3BDxKa4XosgWwFRQUydHUtz4YgpqB"
         };
 
-        let metadata = create_test_metadata(&env, filename, "type/type", 1024000);
+        let metadata = create_test_metadata(&env, filename, "image/jpeg", 1024000);
         client.add_attachment(&record_id, &String::from_str(&env, hash_str), &metadata, &BytesN::from_array(&env, &[1u8; 32]));
     }
 
@@ -889,4 +886,183 @@ fn test_new_attachment_has_no_scan_result() {
         .get_attachment_by_index(&record_id, &0u32, &owner)
         .unwrap();
     assert!(attachment.scan_result.is_none());
+}
+
+// ============================================================
+// Issue #105 (Wave 9 #100) — MIME type whitelist enforcement
+// ============================================================
+
+/// An executable file type must be rejected with `InvalidInput`.
+#[test]
+#[should_panic]
+fn test_add_attachment_executable_file_type_rejected() {
+    let (env, client, _owner, _vet, _pet_id, record_id) = setup_test_env();
+
+    let metadata = create_test_metadata(&env, "malware.exe", "application/x-executable", 1024000);
+    let ipfs_hash = String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG");
+
+    // Should panic — application/x-executable is not whitelisted
+    client.add_attachment(&record_id, &ipfs_hash, &metadata, &BytesN::from_array(&env, &[1u8; 32]));
+}
+
+/// A shell script MIME type must be rejected.
+#[test]
+#[should_panic]
+fn test_add_attachment_shell_script_rejected() {
+    let (env, client, _owner, _vet, _pet_id, record_id) = setup_test_env();
+
+    let metadata = create_test_metadata(&env, "exploit.sh", "text/x-shellscript", 512);
+    let ipfs_hash = String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG");
+
+    client.add_attachment(&record_id, &ipfs_hash, &metadata, &BytesN::from_array(&env, &[1u8; 32]));
+}
+
+/// HTML file type must be rejected (XSS vector).
+#[test]
+#[should_panic]
+fn test_add_attachment_html_file_type_rejected() {
+    let (env, client, _owner, _vet, _pet_id, record_id) = setup_test_env();
+
+    let metadata = create_test_metadata(&env, "page.html", "text/html", 2048);
+    let ipfs_hash = String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG");
+
+    client.add_attachment(&record_id, &ipfs_hash, &metadata, &BytesN::from_array(&env, &[1u8; 32]));
+}
+
+/// All whitelisted MIME types must be accepted.
+#[test]
+fn test_add_attachment_whitelisted_mime_types_accepted() {
+    let (env, client, _owner, _vet, _pet_id, record_id) = setup_test_env();
+    let content_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    let whitelisted = [
+        ("scan.jpg", "image/jpeg", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"),
+        ("scan.png", "image/png", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdH"),
+        ("report.pdf", "application/pdf", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdP"),
+        ("img.dicom", "image/dicom", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdJ"),
+        ("img2.dicom", "application/dicom", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdK"),
+    ];
+
+    for (filename, file_type, hash_str) in &whitelisted {
+        let metadata = create_test_metadata(&env, filename, file_type, 1024);
+        let result = client.add_attachment(
+            &record_id,
+            &String::from_str(&env, hash_str),
+            &metadata,
+            &content_hash,
+        );
+        assert!(result, "Expected {file_type} to be accepted");
+    }
+}
+
+// ============================================================
+// Issue #106 (Wave 9 #101) — Privacy-level access control
+// ============================================================
+
+/// An unauthorized caller querying attachments for a private pet must be
+/// rejected.
+#[test]
+#[should_panic]
+fn test_get_attachments_private_pet_unauthorized_caller_rejected() {
+    let (env, client, _owner, _vet, _pet_id, _record_id) = setup_test_env();
+
+    // Register a private pet + medical record with a different owner
+    let private_owner = Address::generate(&env);
+    let vet2 = Address::generate(&env);
+
+    client.register_vet(
+        &vet2,
+        &String::from_str(&env, "Dr. Private"),
+        &String::from_str(&env, "VET-PRIV-001"),
+        &String::from_str(&env, "Radiology"),
+    );
+    let admin = Address::generate(&env);
+    // Re-use the existing admin that was already initialized in setup_test_env.
+    // We need to call verify_vet; mock_all_auths handles auth for us.
+    client.verify_vet(&Address::generate(&env), &vet2); // auth is mocked
+
+    let private_pet_id = client.register_pet(
+        &private_owner,
+        &String::from_str(&env, "Shadow"),
+        &String::from_str(&env, "2019-03-15"),
+        &Gender::Female,
+        &Species::Cat,
+        &String::from_str(&env, "Siamese"),
+        &String::from_str(&env, "White"),
+        &4u32,
+        &None,
+        &PrivacyLevel::Private,
+    );
+
+    let private_record_id = client.add_medical_record(
+        &private_pet_id,
+        &vet2,
+        &String::from_str(&env, "Checkup"),
+        &String::from_str(&env, "Healthy"),
+        &soroban_sdk::Vec::new(&env),
+        &String::from_str(&env, "Private notes"),
+    );
+
+    // Add an attachment
+    client.add_attachment(
+        &private_record_id,
+        &String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"),
+        &create_test_metadata(&env, "scan.jpg", "image/jpeg", 1024),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
+
+    // An unrelated address tries to read attachments — must be rejected
+    let unauthorized = Address::generate(&env);
+    let _ = admin; // suppress unused warning
+    client.get_attachments(&private_record_id, &unauthorized);
+}
+
+/// The pet owner can always retrieve attachments for their own pet.
+#[test]
+fn test_get_attachments_owner_can_access_private_pet() {
+    let (env, client, _owner, _vet, _pet_id, _record_id) = setup_test_env();
+
+    let private_owner = Address::generate(&env);
+    let vet2 = Address::generate(&env);
+
+    client.register_vet(
+        &vet2,
+        &String::from_str(&env, "Dr. Private"),
+        &String::from_str(&env, "VET-PRIV-002"),
+        &String::from_str(&env, "Radiology"),
+    );
+    client.verify_vet(&Address::generate(&env), &vet2);
+
+    let private_pet_id = client.register_pet(
+        &private_owner,
+        &String::from_str(&env, "Luna"),
+        &String::from_str(&env, "2021-07-01"),
+        &Gender::Female,
+        &Species::Cat,
+        &String::from_str(&env, "Persian"),
+        &String::from_str(&env, "Grey"),
+        &3u32,
+        &None,
+        &PrivacyLevel::Private,
+    );
+
+    let record_id = client.add_medical_record(
+        &private_pet_id,
+        &vet2,
+        &String::from_str(&env, "Annual"),
+        &String::from_str(&env, "Healthy"),
+        &soroban_sdk::Vec::new(&env),
+        &String::from_str(&env, ""),
+    );
+
+    client.add_attachment(
+        &record_id,
+        &String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"),
+        &create_test_metadata(&env, "scan.jpg", "image/jpeg", 1024),
+        &BytesN::from_array(&env, &[1u8; 32]),
+    );
+
+    // Owner must be able to access
+    let attachments = client.get_attachments(&record_id, &private_owner);
+    assert_eq!(attachments.len(), 1);
 }

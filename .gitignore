@@ -1,9 +1,40 @@
-target
-.snfoundry_cache/
+# Build artifacts
+target/
 stellar-contracts/target/
+
+# Cargo lock files (workspace-level kept, sub-crate excluded)
 stellar-contracts/Cargo.lock
-test_snapshots/test/test
-ISSUES.md
-node_modules
+
+# Test snapshots (proptest / insta)
+test_snapshots/
+**/test_snapshots/
+**/*.snap
+**/*.snap.new
+
+# Environment / secrets
 .env
+.env.*
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Node.js
+node_modules/
+
+# Foundry / Starknet cache
+.snfoundry_cache/
+
+# Misc generated docs / drafts
+ISSUES.md
 somzilla.md
+
+# JSON build artifacts (keep source JSON like package.json)
+*.min.json

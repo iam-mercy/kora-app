@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "stellar-contracts",
+    "stellar-contracts/contracts/pet-transfer-adoption",
 ]
 resolver = "2"
 

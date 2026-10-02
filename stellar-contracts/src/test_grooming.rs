@@ -593,7 +593,7 @@ mod test_recurring_grooming {
         env.mock_all_auths();
         let contract_id = env.register_contract(None, KoraContract);
         let client = KoraContractClient::new(&env, &contract_id);
-        let (_owner, pet_id) = setup_pet(&env, &client);
+        let (owner, pet_id) = setup_pet(&env, &client);
 
         let start = 1_000_000u64;
         let interval = 7 * 24 * 3600u64;
@@ -611,7 +611,7 @@ mod test_recurring_grooming {
 
         // After 4 slots (indices 0..3), last_slot_date = start + 3*interval
         // advance should produce slot at start + 4*interval
-        let record_id = client.advance_schedule(&schedule_id);
+        let record_id = client.advance_schedule(&owner, &schedule_id);
         assert!(record_id > 0);
 
         let record = client.get_grooming_record(&record_id).unwrap();
@@ -620,6 +620,37 @@ mod test_recurring_grooming {
 
     #[test]
     fn test_cancel_schedule_stops_generation() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (owner, pet_id) = setup_pet(&env, &client);
+
+        let start = 1_000_000u64;
+        let interval = 7 * 24 * 3600u64;
+        let end = start + interval * 10;
+
+        let schedule_id = client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Weekly,
+            &start,
+            &end,
+            &String::from_str(&env, "Groomer A"),
+            &String::from_str(&env, "Bath"),
+            &5000,
+        );
+
+        client.cancel_grooming_schedule(&schedule_id);
+
+        let result = client.advance_schedule(&owner, &schedule_id);
+        assert_eq!(result, 0);
+    }
+
+    /// Issue #69: advance_schedule must reject callers who are neither the
+    /// pet owner nor the schedule's registered groomer.
+    #[test]
+    #[should_panic(expected = "Unauthorized")]
+    fn test_advance_schedule_rejects_unauthorized_caller() {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register_contract(None, KoraContract);
@@ -640,10 +671,112 @@ mod test_recurring_grooming {
             &5000,
         );
 
-        client.cancel_grooming_schedule(&schedule_id);
+        let stranger = Address::generate(&env);
+        client.advance_schedule(&stranger, &schedule_id);
+    }
 
-        let result = client.advance_schedule(&schedule_id);
-        assert_eq!(result, 0);
+    // --- Issue #64: interval_days validation ---
+
+    #[test]
+    #[should_panic]
+    fn test_create_grooming_schedule_zero_interval_days_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id) = setup_pet(&env, &client);
+
+        let start = 1_000_000u64;
+        let end = start + 86400 * 30;
+
+        // Custom(0) should panic with ContractError::InvalidInput
+        client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Custom(0),
+            &start,
+            &end,
+            &String::from_str(&env, "Groomer A"),
+            &String::from_str(&env, "Bath"),
+            &5000,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_create_grooming_schedule_over_365_days_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id) = setup_pet(&env, &client);
+
+        let start = 1_000_000u64;
+        let end = start + 86400 * 400;
+
+        // Custom(366) exceeds 365-day limit
+        client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Custom(366),
+            &start,
+            &end,
+            &String::from_str(&env, "Groomer A"),
+            &String::from_str(&env, "Bath"),
+            &5000,
+        );
+    }
+
+    #[test]
+    fn test_create_grooming_schedule_14_interval_days_succeeds() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id) = setup_pet(&env, &client);
+
+        let start = 1_000_000u64;
+        let interval_secs = 14u64 * 24 * 3600;
+        let end = start + interval_secs * 10;
+
+        // Custom(14) = biweekly equivalent, must succeed
+        let schedule_id = client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Custom(14),
+            &start,
+            &end,
+            &String::from_str(&env, "Groomer A"),
+            &String::from_str(&env, "Bath"),
+            &5000,
+        );
+
+        assert!(schedule_id > 0);
+        let history = client.get_grooming_history(&pet_id);
+        assert_eq!(history.len(), 4);
+    }
+
+    #[test]
+    fn test_create_grooming_schedule_365_interval_days_boundary_succeeds() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id) = setup_pet(&env, &client);
+
+        let start = 1_000_000u64;
+        let interval_secs = 365u64 * 24 * 3600;
+        let end = start + interval_secs * 2;
+
+        // Custom(365) is at the boundary — must succeed
+        let schedule_id = client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Custom(365),
+            &start,
+            &end,
+            &String::from_str(&env, "Groomer A"),
+            &String::from_str(&env, "Annual Bath"),
+            &10000,
+        );
+
+        assert!(schedule_id > 0);
     }
 }
 // -------------------------------------------------------
@@ -665,6 +798,9 @@ mod test_grooming_conflict {
             &String::from_str(env, "Groomer Tester"),
             &String::from_str(env, "LIC-GRM-001"),
         );
+        // Registration alone leaves the groomer unverified (Issue #65) —
+        // these conflict-detection tests need a bookable groomer.
+        client.verify_groomer(&admin, &groomer);
         groomer
     }
 
@@ -685,6 +821,9 @@ mod test_grooming_conflict {
             &Gender::Male,
             &Species::Dog,
             &String::from_str(&env, "Beagle"),
+            &String::from_str(&env, "Tricolor"),
+            &20u32,
+            &None,
             &PrivacyLevel::Public,
         );
 
@@ -717,6 +856,9 @@ mod test_grooming_conflict {
             &Gender::Female,
             &Species::Dog,
             &String::from_str(&env, "Poodle"),
+            &String::from_str(&env, "White"),
+            &15u32,
+            &None,
             &PrivacyLevel::Public,
         );
 
@@ -745,6 +887,9 @@ mod test_grooming_conflict {
             &Gender::Male,
             &Species::Dog,
             &String::from_str(&env, "Labrador"),
+            &String::from_str(&env, "Black"),
+            &28u32,
+            &None,
             &PrivacyLevel::Public,
         );
 
@@ -755,5 +900,234 @@ mod test_grooming_conflict {
         client.book_grooming_slot(&groomer, &1400u64, &45u64, &pet_id, &owner);
     }
 
+    // -------------------------------------------------------
+    // Issue #65: groomer verification lifecycle
+    // -------------------------------------------------------
 
+    #[test]
+    fn test_groomer_registration_verification_lifecycle() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+        let groomer = Address::generate(&env);
+
+        client.register_groomer(
+            &admin,
+            &groomer,
+            &String::from_str(&env, "Groomer Tester"),
+            &String::from_str(&env, "LIC-GRM-002"),
+        );
+        assert!(
+            !client.is_verified_groomer(&groomer),
+            "newly registered groomer must start unverified"
+        );
+
+        client.verify_groomer(&admin, &groomer);
+        assert!(
+            client.is_verified_groomer(&groomer),
+            "admin verification must mark the groomer verified"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "GroomerNotVerified")]
+    fn test_unverified_groomer_cannot_be_booked() {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.budget().reset_unlimited();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+        let groomer = Address::generate(&env);
+        client.register_groomer(
+            &admin,
+            &groomer,
+            &String::from_str(&env, "Unverified Groomer"),
+            &String::from_str(&env, "LIC-GRM-003"),
+        );
+        // Deliberately not calling verify_groomer.
+
+        let owner = Address::generate(&env);
+        let pet_id = client.register_pet(
+            &owner,
+            &String::from_str(&env, "Rex"),
+            &String::from_str(&env, "2021-01-01"),
+            &Gender::Male,
+            &Species::Dog,
+            &String::from_str(&env, "Boxer"),
+            &String::from_str(&env, "Brindle"),
+            &27u32,
+            &None,
+            &PrivacyLevel::Public,
+        );
+
+        client.book_grooming_slot(&groomer, &1000u64, &60u64, &pet_id, &owner);
+    }
+}
+
+// -------------------------------------------------------
+// Issue #66: rate_groomer bounds and booking-record checks
+// -------------------------------------------------------
+
+#[cfg(test)]
+mod test_rate_groomer {
+    use crate::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    fn setup_pet_with_record(env: &Env, client: &KoraContractClient) -> (Address, u64, u64) {
+        let owner = Address::generate(env);
+        let pet_id = client.register_pet(
+            &owner,
+            &String::from_str(env, "Daisy"),
+            &String::from_str(env, "2019-09-01"),
+            &Gender::Female,
+            &Species::Dog,
+            &String::from_str(env, "Corgi"),
+            &String::from_str(env, "Fawn"),
+            &12u32,
+            &None,
+            &PrivacyLevel::Public,
+        );
+
+        let now = env.ledger().timestamp();
+        client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Weekly,
+            &now,
+            &(now + 7 * 24 * 3600 * 10),
+            &String::from_str(env, "Suds & Snips"),
+            &String::from_str(env, "Full Groom"),
+            &4000,
+        );
+        // create_grooming_schedule generates record id 1 for the first slot.
+        (owner, pet_id, 1u64)
+    }
+
+    #[test]
+    #[should_panic(expected = "InvalidRating")]
+    fn test_rate_groomer_rejects_zero_score() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id, record_id) = setup_pet_with_record(&env, &client);
+
+        client.rate_groomer(&pet_id, &record_id, &0u32);
+    }
+
+    #[test]
+    #[should_panic(expected = "InvalidRating")]
+    fn test_rate_groomer_rejects_score_above_five() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id, record_id) = setup_pet_with_record(&env, &client);
+
+        client.rate_groomer(&pet_id, &record_id, &10u32);
+    }
+
+    #[test]
+    #[should_panic(expected = "InvalidInput")]
+    fn test_rate_groomer_rejects_mismatched_pet_and_record() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id, record_id) = setup_pet_with_record(&env, &client);
+
+        // A different, unrelated pet trying to rate using someone else's
+        // grooming record must be rejected.
+        let (_other_owner, other_pet_id, _other_record_id) =
+            setup_pet_with_record(&env, &client);
+        client.rate_groomer(&other_pet_id, &record_id, &5u32);
+    }
+
+    #[test]
+    fn test_rate_groomer_accepts_valid_score_for_own_record() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, pet_id, record_id) = setup_pet_with_record(&env, &client);
+
+        // groomer_address is always None on generated records today (see
+        // the comment on rate_groomer, and the flagged follow-up), so this
+        // returns false rather than panicking — but it must not panic, and
+        // it proves in-bounds scores for a real, matching record pass
+        // validation cleanly.
+        let result = client.rate_groomer(&pet_id, &record_id, &4u32);
+        assert!(!result);
+    }
+}
+
+// -------------------------------------------------------
+// Issue #68: cancel_grooming_schedule owner authorization
+// -------------------------------------------------------
+
+#[cfg(test)]
+mod test_cancel_grooming_schedule_auth {
+    use crate::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    fn setup_schedule(env: &Env, client: &KoraContractClient) -> (Address, u64) {
+        let owner = Address::generate(env);
+        let pet_id = client.register_pet(
+            &owner,
+            &String::from_str(env, "Milo"),
+            &String::from_str(env, "2020-05-05"),
+            &Gender::Male,
+            &Species::Dog,
+            &String::from_str(env, "Husky"),
+            &String::from_str(env, "Gray"),
+            &22u32,
+            &None,
+            &PrivacyLevel::Public,
+        );
+
+        let now = env.ledger().timestamp();
+        let schedule_id = client.create_grooming_schedule(
+            &pet_id,
+            &GroomingFrequency::Weekly,
+            &now,
+            &(now + 7 * 24 * 3600 * 10),
+            &String::from_str(env, "Groomer"),
+            &String::from_str(env, "Full Groom"),
+            &4000,
+        );
+        (owner, schedule_id)
+    }
+
+    // Note: there is no test here for "a non-owner caller is rejected".
+    // `cancel_grooming_schedule` takes no separate caller/address parameter
+    // at all — it looks up `pet.owner` from storage and calls
+    // `pet.owner.require_auth()` directly, so the only identity ever
+    // authenticated is whichever address is actually stored as the pet's
+    // owner. There's no caller-spoofing surface to construct a negative
+    // test against, and `env.mock_all_auths()` (required to test the
+    // success path at all, since Soroban test envs can't produce a real
+    // signature) makes every `require_auth()` call succeed regardless of
+    // address, so a blanket-mocked test can't distinguish "owner" from
+    // "non-owner" here even in principle. The real protection is Soroban's
+    // signature verification itself: no caller other than the pet's actual
+    // owner can ever produce a valid `require_auth()` for that address on a
+    // live network.
+
+    #[test]
+    fn test_owner_can_cancel_schedule() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        let (_owner, schedule_id) = setup_schedule(&env, &client);
+
+        let result = client.cancel_grooming_schedule(&schedule_id);
+        assert!(result);
+    }
 }

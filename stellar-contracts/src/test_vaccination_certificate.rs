@@ -530,3 +530,59 @@ fn test_revoke_vaccination_certificate_by_admin() {
     assert_eq!(vax.revocation_reason.unwrap(), reason);
 }
 
+
+// ── Issue #89 ────────────────────────────────────────────────────────────────
+// Certificates anchored and verified within the same ledger block must return
+// `true`. The old code used `anchor_time < ledger_now` (strict), so same-block
+// verification always returned `false`. The fix changes the comparison to `<=`.
+
+#[test]
+fn test_verify_certificate_same_block_returns_true() {
+    let (env, client, _admin) = setup();
+    let owner = Address::generate(&env);
+    let vet = Address::generate(&env);
+
+    let pet_id = register_pet(&client, &env, &owner);
+    register_and_verify_vet(&client, &env, &vet);
+    let vax_id = add_vaccination(&client, &env, pet_id, &vet);
+
+    // Anchor and immediately verify in the same ledger timestamp (same block).
+    let cert_hash = String::from_str(
+        &env,
+        "sha256:sameblock_hash_1234567890abcdef1234567890abcdef1234567890abcdef",
+    );
+    client.anchor_certificate(&vet, &pet_id, &vax_id, &cert_hash);
+
+    // Ledger time has not advanced — anchor_time == ledger_now.
+    // With the <= fix this must be true.
+    let is_valid = client.verify_certificate(&pet_id, &vax_id, &cert_hash);
+    assert!(
+        is_valid,
+        "verify_certificate should return true when anchor_time == ledger_now (same block)"
+    );
+}
+
+#[test]
+fn test_verify_certificate_wrong_hash_same_block_returns_false() {
+    let (env, client, _admin) = setup();
+    let owner = Address::generate(&env);
+    let vet = Address::generate(&env);
+
+    let pet_id = register_pet(&client, &env, &owner);
+    register_and_verify_vet(&client, &env, &vet);
+    let vax_id = add_vaccination(&client, &env, pet_id, &vet);
+
+    let cert_hash = String::from_str(
+        &env,
+        "sha256:real_hash_1234567890abcdef1234567890abcdef1234567890abcdef1234",
+    );
+    client.anchor_certificate(&vet, &pet_id, &vax_id, &cert_hash);
+
+    // Wrong hash must still return false even in the same block.
+    let wrong_hash = String::from_str(
+        &env,
+        "sha256:bad_hash_1234567890abcdef1234567890abcdef1234567890abcdef12345",
+    );
+    let is_valid = client.verify_certificate(&pet_id, &vax_id, &wrong_hash);
+    assert!(!is_valid, "verify_certificate must return false for a wrong hash");
+}

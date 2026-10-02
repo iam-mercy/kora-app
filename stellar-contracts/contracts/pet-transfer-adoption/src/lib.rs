@@ -157,6 +157,9 @@ pub struct CustodyEntry {
     pub to: Address,
     pub timestamp: u64,
     pub transfer_type: TransferType,
+    /// Physical condition of the animal at the time of transfer (e.g. "healthy",
+    /// "injured – treated", "malnourished"). `None` when not recorded.
+    pub condition_notes: Option<String>,
 }
 
 /// Maximum number of entries retained in ownership history per pet.
@@ -269,6 +272,9 @@ pub enum ContractError {
     AdopterApprovalRequired = 32,
     InputStringTooLong = 33,
     AdoptionNotExpired = 34,
+    /// Returned when an attempt is made to expire or reclaim a transfer
+    /// that has an active (unresolved) dispute. (Issue #62)
+    TransferDisputed = 35,
 }
 
 /// ======================================================
@@ -349,6 +355,7 @@ fn append_custody_entry(
     from: Address,
     to: Address,
     transfer_type: TransferType,
+    condition_notes: Option<String>,
 ) {
     let mut chain: Vec<CustodyEntry> = env
         .storage()
@@ -360,6 +367,7 @@ fn append_custody_entry(
         to,
         timestamp: env.ledger().timestamp(),
         transfer_type,
+        condition_notes,
     });
     // Keep only the most recent MAX_CUSTODY_CHAIN_LENGTH entries.
     if chain.len() > MAX_CUSTODY_CHAIN_LENGTH {
@@ -641,6 +649,19 @@ impl PetOwnershipContract {
         {
             panic_with_error!(&env, ContractError::TransferAlreadyPending);
         }
+        // Also block if an AdoptionRecord exists in a non-terminal state (Signed),
+        // which covers the case where an adoption has been fully approved but not
+        // yet finalized — PendingAdoption may have been removed but the in-progress
+        // record remains. (Issue #127)
+        if let Some(existing_record) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, AdoptionRecord>(&DataKey::AdoptionRecord(pet_id))
+        {
+            if existing_record.state == AdoptionState::Signed {
+                panic_with_error!(&env, ContractError::TransferAlreadyPending);
+            }
+        }
         if env
             .storage()
             .persistent()
@@ -745,6 +766,10 @@ impl PetOwnershipContract {
     /// custom cancellation timeout in days. If the transfer is not accepted
     /// within this window, [`cancel_expired_transfer`] becomes callable by
     /// the original owner or any third party.
+    ///
+    /// # Errors
+    /// - [`ContractError::InvalidTimeoutDays`] — `transfer_timeout_days` must be ≥ 1;
+    ///   a zero value would cause the transfer to expire instantly upon creation.
     pub fn initiate_transfer_with_timeout(
         env: Env,
         pet_id: u64,
@@ -801,6 +826,17 @@ impl PetOwnershipContract {
             .persistent()
             .get(&DataKey::PendingTransfer(pet_id))
             .unwrap_or_else(|| panic_with_error!(env, ContractError::NoPendingTransfer));
+
+        // Issue #62: block expiry while an active dispute is in progress.
+        if let Some(escrowed) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, EscrowedTransfer>(&DataKey::EscrowedTransfer(pet_id))
+        {
+            if escrowed.disputed {
+                panic_with_error!(env, ContractError::TransferDisputed);
+            }
+        }
 
         let now = env.ledger().timestamp();
         if now.saturating_sub(transfer.initiated_at) < transfer.timeout_secs {
@@ -949,6 +985,7 @@ impl PetOwnershipContract {
             pending.from.clone(),
             pending.to.clone(),
             TransferType::Adoption,
+            None,
         );
 
         env.events().publish(
@@ -960,6 +997,8 @@ impl PetOwnershipContract {
     /// Allow a multisig admin to waive the waiting period for a specific adoption.
     pub fn waive_waiting_period(env: Env, pet_id: u64, admin: Address, reason: String) {
         admin.require_auth();
+        // Verify the caller is a registered multisig admin. (Issue #128)
+        require_trusted_multisig_admin(&env, &admin);
         let pending: PendingAdoption = env
             .storage()
             .persistent()
@@ -1030,6 +1069,7 @@ impl PetOwnershipContract {
             pending.from.clone(),
             pending.to.clone(),
             TransferType::Adoption,
+            None,
         );
 
         env.events().publish(
@@ -1180,6 +1220,7 @@ impl PetOwnershipContract {
             escrowed.from.clone(),
             escrowed.to.clone(),
             TransferType::Direct,
+            None,
         );
 
         env.events().publish(
@@ -1284,6 +1325,17 @@ impl PetOwnershipContract {
             .unwrap_or_else(|| panic_with_error!(env, ContractError::NoPendingTransfer));
 
         transfer.from.require_auth();
+
+        // Issue #62: block reclaim while an active dispute is in progress.
+        if let Some(escrowed) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, EscrowedTransfer>(&DataKey::EscrowedTransfer(pet_id))
+        {
+            if escrowed.disputed {
+                panic_with_error!(env, ContractError::TransferDisputed);
+            }
+        }
 
         let now = env.ledger().timestamp();
         if now.saturating_sub(transfer.initiated_at) < TRANSFER_EXPIRY_SECONDS {
@@ -1481,6 +1533,7 @@ impl PetOwnershipContract {
                 old_owner.clone(),
                 to.clone(),
                 TransferType::Direct,
+                None,
             );
 
             env.events()

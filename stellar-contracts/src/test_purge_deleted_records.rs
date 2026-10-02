@@ -4,6 +4,9 @@ use soroban_sdk::{
     Address, Env, String, Vec,
 };
 
+/// Minimum retention in seconds that satisfies the Issue #102 floor (365 days).
+const MIN_RETENTION: u64 = 365 * 86_400;
+
 fn setup(env: &Env) -> (KoraContractClient<'_>, Address, Address, u64) {
     env.mock_all_auths();
     let contract_id = env.register_contract(None, KoraContract);
@@ -62,7 +65,8 @@ fn test_purge_nothing_when_no_deleted_records() {
 
     add_record(&client, &env, &vet, pet_id, "Healthy");
 
-    client.set_retention_period(&admin, &(30 * 86_400));
+    // Use the minimum legal retention period (Issue #102).
+    client.set_retention_period(&admin, &MIN_RETENTION);
     let purged = client.purge_deleted_records(&pet_id, &admin, &false);
     assert_eq!(purged.deleted.len(), 0);
 }
@@ -77,17 +81,20 @@ fn test_purge_partial_old_and_new() {
     let r2 = add_record(&client, &env, &vet, pet_id, "Old2");
     let r3 = add_record(&client, &env, &vet, pet_id, "Recent");
 
+    // Delete r1 and r2 at t=0.
     client.delete_medical_record(&pet_id, &r1, &vet);
     client.delete_medical_record(&pet_id, &r2, &vet);
 
+    // Delete r3 after MIN_RETENTION / 2 — it won't be old enough to purge.
     env.ledger()
-        .with_mut(|l| l.timestamp = 1_700_000_000 + 20 * 86_400);
+        .with_mut(|l| l.timestamp = 1_700_000_000 + MIN_RETENTION / 2);
     client.delete_medical_record(&pet_id, &r3, &vet);
 
+    // Advance just past MIN_RETENTION from the original deletion of r1/r2.
     env.ledger()
-        .with_mut(|l| l.timestamp = 1_700_000_000 + 31 * 86_400);
+        .with_mut(|l| l.timestamp = 1_700_000_000 + MIN_RETENTION + 1);
 
-    client.set_retention_period(&admin, &(25 * 86_400));
+    client.set_retention_period(&admin, &MIN_RETENTION);
     let purged = client.purge_deleted_records(&pet_id, &admin, &false);
     assert_eq!(purged.deleted.len(), 2);
 }
@@ -106,10 +113,11 @@ fn test_purge_all_old_records() {
     client.delete_medical_record(&pet_id, &r2, &vet);
     client.delete_medical_record(&pet_id, &r3, &vet);
 
+    // Advance well past the retention window.
     env.ledger()
-        .with_mut(|l| l.timestamp = 1_700_000_000 + 60 * 86_400);
+        .with_mut(|l| l.timestamp = 1_700_000_000 + MIN_RETENTION + 86_400);
 
-    client.set_retention_period(&admin, &(30 * 86_400));
+    client.set_retention_period(&admin, &MIN_RETENTION);
     let purged = client.purge_deleted_records(&pet_id, &admin, &false);
     assert_eq!(purged.deleted.len(), 3);
 }
@@ -123,7 +131,7 @@ fn test_purge_requires_admin() {
     let r1 = add_record(&client, &env, &vet, pet_id, "Rec1");
     client.delete_medical_record(&pet_id, &r1, &vet);
 
-    client.set_retention_period(&admin, &(30 * 86_400));
+    client.set_retention_period(&admin, &MIN_RETENTION);
 
     let stranger = Address::generate(&env);
     client.purge_deleted_records(&pet_id, &stranger, &false);

@@ -202,6 +202,8 @@ fn test_storage_usage_increments_on_lab_result() {
         &String::from_str(&env, "Blood Test"),
         &String::from_str(&env, "Normal"),
         &String::from_str(&env, "Reference ranges"),
+        &0u32,
+        &100u32,
         &None,
         &None,
     );
@@ -326,6 +328,35 @@ fn test_write_rejected_when_quota_exceeded() {
         &String::from_str(&env, "Treatment 3"),
         &Vec::new(&env),
         &String::from_str(&env, "Notes 3"),
+    );
+}
+
+/// Issue #69: behavior records must consume storage quota like every other
+/// record type, so quota exhaustion also blocks `add_behavior_record`
+/// specifically (not just medical records, covered above).
+#[test]
+#[should_panic(expected = "StorageQuotaExceeded")]
+fn test_behavior_record_rejected_when_quota_exceeded() {
+    let (env, client, admin, owner) = setup_env();
+    let pet_id = register_test_pet(&client, &env, &owner);
+
+    // Set a very low quota
+    client.set_pet_storage_quota(&admin, &pet_id, &1);
+
+    // First behavior record consumes the only available quota unit.
+    client.add_behavior_record(
+        &pet_id,
+        &BehaviorType::Training,
+        &5,
+        &String::from_str(&env, "Good behavior"),
+    );
+
+    // Second should panic with StorageQuotaExceeded.
+    client.add_behavior_record(
+        &pet_id,
+        &BehaviorType::Training,
+        &5,
+        &String::from_str(&env, "More good behavior"),
     );
 }
 
@@ -572,4 +603,81 @@ fn test_quota_enforcement_independent_per_pet() {
 
     let usage2 = client.get_storage_usage(&pet2_id);
     assert_eq!(usage2.current_count, 1);
+}
+
+// ============================================================
+// Issue #107 (Wave 9 #102) — Storage quota consumed by attachments
+// ============================================================
+
+/// Adding an attachment must increment the pet storage usage counter.
+#[test]
+fn test_storage_usage_increments_on_attachment() {
+    let (env, client, admin, owner) = setup_env();
+    let pet_id = register_test_pet(&client, &env, &owner);
+    let vet = register_vet(&client, &env, &admin);
+
+    // Add a medical record (increments quota by 1)
+    let record_id = client.add_medical_record(
+        &pet_id,
+        &vet,
+        &String::from_str(&env, "Checkup"),
+        &String::from_str(&env, "Healthy"),
+        &Vec::new(&env),
+        &String::from_str(&env, "Notes"),
+    );
+
+    let usage_before = client.get_storage_usage(&pet_id);
+    assert_eq!(usage_before.current_count, 1);
+
+    // Add an attachment — must increment quota by 1 more
+    client.add_attachment(
+        &record_id,
+        &String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"),
+        &AttachmentMetadata {
+            filename: String::from_str(&env, "xray.jpg"),
+            file_type: String::from_str(&env, "image/jpeg"),
+            size: 1024,
+            uploaded_date: env.ledger().timestamp(),
+        },
+        &soroban_sdk::BytesN::from_array(&env, &[1u8; 32]),
+    );
+
+    let usage_after = client.get_storage_usage(&pet_id);
+    assert_eq!(usage_after.current_count, 2);
+}
+
+/// Adding an attachment when the pet's storage quota is depleted must fail
+/// with `StorageQuotaExceeded`.
+#[test]
+#[should_panic(expected = "StorageQuotaExceeded")]
+fn test_add_attachment_rejected_when_quota_depleted() {
+    let (env, client, admin, owner) = setup_env();
+    let pet_id = register_test_pet(&client, &env, &owner);
+    let vet = register_vet(&client, &env, &admin);
+
+    // Set quota to 1 so the medical record fills it up
+    client.set_pet_storage_quota(&admin, &pet_id, &1);
+
+    // Add a medical record — fills the quota
+    let record_id = client.add_medical_record(
+        &pet_id,
+        &vet,
+        &String::from_str(&env, "Checkup"),
+        &String::from_str(&env, "Healthy"),
+        &Vec::new(&env),
+        &String::from_str(&env, "Notes"),
+    );
+
+    // Quota is now 1/1 — adding an attachment must panic with StorageQuotaExceeded
+    client.add_attachment(
+        &record_id,
+        &String::from_str(&env, "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"),
+        &AttachmentMetadata {
+            filename: String::from_str(&env, "xray.jpg"),
+            file_type: String::from_str(&env, "image/jpeg"),
+            size: 1024,
+            uploaded_date: env.ledger().timestamp(),
+        },
+        &soroban_sdk::BytesN::from_array(&env, &[1u8; 32]),
+    );
 }

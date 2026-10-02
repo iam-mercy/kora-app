@@ -1,8 +1,8 @@
-//! Boundary tests for the per-record attachment cap (Issue #774).
+//! Boundary tests for the per-record attachment cap (Wave 9 #99).
 //!
-//! `add_attachment` must accept up to `MAX_ATTACHMENTS_PER_RECORD` (20)
+//! `add_attachment` must accept up to `MAX_ATTACHMENTS_PER_RECORD` (10)
 //! attachments on a single medical record and reject any further attachment
-//! with `ContractError::StorageQuotaExceeded`.
+//! with `ContractError::AttachmentLimitReached`.
 
 use crate::*;
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String, Vec};
@@ -33,9 +33,8 @@ fn setup() -> (Env, KoraContractClient<'static>, u64) {
         &PrivacyLevel::Public,
     );
 
-    // No public `add_medical_record` exists in the current contract surface, so
-    // seed a record directly into instance storage — the same store and key
-    // `add_attachment` reads/writes.
+    // Seed a medical record directly into instance storage — the same store
+    // and key `add_attachment` reads/writes.
     let record_id: u64 = 1;
     let record = MedicalRecord {
         id: record_id,
@@ -68,7 +67,7 @@ fn metadata(env: &Env) -> AttachmentMetadata {
     }
 }
 
-/// Adding exactly `MAX_ATTACHMENTS_PER_RECORD` (20) attachments succeeds.
+/// Adding exactly `MAX_ATTACHMENTS_PER_RECORD` (10) attachments succeeds.
 #[test]
 fn test_add_up_to_cap_succeeds() {
     let (env, client, record_id) = setup();
@@ -83,26 +82,25 @@ fn test_add_up_to_cap_succeeds() {
     }
 
     assert_eq!(client.get_attachment_count(&record_id), MAX_ATTACHMENTS_PER_RECORD);
-    assert_eq!(
-        client.get_attachments(&record_id).len(),
-        MAX_ATTACHMENTS_PER_RECORD
-    );
 }
 
-/// Adding the 21st attachment fails with `StorageQuotaExceeded` and leaves the
-/// count unchanged at the cap.
+/// Adding the 11th attachment (when limit is 10) fails with
+/// `AttachmentLimitReached` and leaves the count unchanged at the cap.
 #[test]
-fn test_exceeding_cap_fails() {
+fn test_exceeding_cap_fails_with_attachment_limit_reached() {
     let (env, client, record_id) = setup();
     let hash = String::from_str(&env, VALID_IPFS_HASH);
     let content_hash = BytesN::from_array(&env, &[7u8; 32]);
 
+    // Add exactly 10 attachments (the limit)
     for _ in 0..MAX_ATTACHMENTS_PER_RECORD {
         client.add_attachment(&record_id, &hash, &metadata(&env), &content_hash);
     }
 
+    // 11th attachment must be rejected with AttachmentLimitReached
     let result = client.try_add_attachment(&record_id, &hash, &metadata(&env), &content_hash);
-    let expected = soroban_sdk::Error::from_contract_error(ContractError::StorageQuotaExceeded as u32);
+    let expected =
+        soroban_sdk::Error::from_contract_error(ContractError::AttachmentLimitReached as u32);
     assert_eq!(result, Err(Ok(expected)));
 
     // The rejected attachment must not have been stored.

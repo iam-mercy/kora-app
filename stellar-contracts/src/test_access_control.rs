@@ -131,7 +131,7 @@ fn test_remove_pet_from_owner_index_missing_last_entry_does_not_panic() {
     // Initiate a transfer of pet1 — this calls remove_pet_from_owner_index
     // internally. With the fix it must complete without panicking.
     client.transfer_pet_ownership(&pet1, &new_owner);
-    client.accept_pet_transfer(&pet1);
+    client.accept_pet_transfer(&pet1, &TransferType::Direct, &None);
 
     // pet1 now belongs to new_owner; the call did not panic.
     assert_eq!(client.get_pet_owner(&pet1), Some(new_owner));

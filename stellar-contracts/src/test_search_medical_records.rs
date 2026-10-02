@@ -413,6 +413,8 @@ mod test_search_medical_records {
             &String::from_str(&env, "Blood Test"),
             &String::from_str(&env, "Normal"),
             &String::from_str(&env, "0.0-1.0"),
+            &0u32,
+            &100u32,
             &None,
             &None,
             &soroban_sdk::Map::new(&env),
@@ -425,6 +427,8 @@ mod test_search_medical_records {
             &String::from_str(&env, "Urinalysis"),
             &String::from_str(&env, "Abnormal"),
             &String::from_str(&env, "0.0-1.0"),
+            &0u32,
+            &100u32,
             &None,
             &None,
             &soroban_sdk::Map::new(&env),
@@ -437,10 +441,78 @@ mod test_search_medical_records {
             &String::from_str(&env, "X-Ray"),
             &String::from_str(&env, "Clear"),
             &String::from_str(&env, "N/A"),
+            &0u32,
+            &100u32,
             &None,
             &None,
             &soroban_sdk::Map::new(&env),
         );
         assert_eq!(client.get_lab_result_count(&pet_id), 3);
+    }
+
+    /// #96 – get_lab_result_count must be scoped per pet, not global.
+    /// Adding lab results to one pet must not affect another pet's count.
+    #[test]
+    fn test_get_lab_result_count_is_per_pet_not_global() {
+        let (env, client, _admin, _owner, vet, pet_id_a) = setup();
+
+        // Register a second pet under a different owner
+        let owner_b = Address::generate(&env);
+        let pet_id_b = client.register_pet(
+            &owner_b,
+            &String::from_str(&env, "Whiskers"),
+            &String::from_str(&env, "2021-06-01"),
+            &crate::Gender::Female,
+            &crate::Species::Cat,
+            &String::from_str(&env, "Siamese"),
+            &String::from_str(&env, "White"),
+            &5u32,
+            &None,
+            &crate::PrivacyLevel::Public,
+        );
+
+        // Initially both pets have a count of 0
+        assert_eq!(client.get_lab_result_count(&pet_id_a), 0);
+        assert_eq!(client.get_lab_result_count(&pet_id_b), 0);
+
+        // Add 2 lab results for pet A
+        client.add_lab_result(
+            &pet_id_a,
+            &vet,
+            &String::from_str(&env, "Blood Panel"),
+            &String::from_str(&env, "Normal"),
+            &String::from_str(&env, "0.0-1.0"),
+            &None,
+            &None,
+            &soroban_sdk::Map::new(&env),
+        );
+        client.add_lab_result(
+            &pet_id_a,
+            &vet,
+            &String::from_str(&env, "Urinalysis"),
+            &String::from_str(&env, "Abnormal"),
+            &String::from_str(&env, "0.0-1.0"),
+            &None,
+            &None,
+            &soroban_sdk::Map::new(&env),
+        );
+
+        // Add 1 lab result for pet B
+        client.add_lab_result(
+            &pet_id_b,
+            &vet,
+            &String::from_str(&env, "Thyroid"),
+            &String::from_str(&env, "Normal"),
+            &String::from_str(&env, "0.0-1.0"),
+            &None,
+            &None,
+            &soroban_sdk::Map::new(&env),
+        );
+
+        // Counts must be independent per pet — not a shared global
+        assert_eq!(client.get_lab_result_count(&pet_id_a), 2,
+            "pet_a should have 2 lab results");
+        assert_eq!(client.get_lab_result_count(&pet_id_b), 1,
+            "pet_b should have 1 lab result, not 3 (global count)");
     }
 }
