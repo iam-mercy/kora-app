@@ -756,4 +756,91 @@ mod test_lab_result_validations {
         let results = client.get_lab_results(&pet_id, &owner, &0u64, &10u32, &None, &None);
         assert_eq!(results.len(), 1);
     }
+
+    /// Issue #32 — correctness test: 25 lab results, sequential pagination
+    /// across three pages of 10 verifies that offset >= limit no longer causes
+    /// premature loop exit.
+    #[test]
+    fn test_get_lab_results_sequential_pagination_25_records() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+        client.init_admin(&admin);
+
+        let owner = Address::generate(&env);
+        let vet = Address::generate(&env);
+
+        let pet_id = client.register_pet(
+            &owner,
+            &String::from_str(&env, "Pagination Dog"),
+            &String::from_str(&env, "2020-01-01"),
+            &Gender::Male,
+            &Species::Dog,
+            &String::from_str(&env, "Labrador"),
+            &String::from_str(&env, "Yellow"),
+            &3u32,
+            &None,
+            &PrivacyLevel::Public,
+        );
+
+        client.register_vet(
+            &vet,
+            &String::from_str(&env, "Dr. Page"),
+            &String::from_str(&env, "LIC-PAGE"),
+            &String::from_str(&env, "General"),
+        );
+        client.verify_vet(&admin, &vet);
+
+        // Insert 25 lab results with incrementing timestamps so ordering is deterministic.
+        for i in 1u64..=25 {
+            client.add_lab_result(
+                &pet_id,
+                &vet,
+                &String::from_str(&env, "CBC"),
+                &String::from_str(&env, "Normal"),
+                &String::from_str(&env, "0-100"),
+                &0u32,
+                &100u32,
+                &None,
+                &Some(i * 100),
+            );
+        }
+
+        // Page 1: offset=0, limit=10 → items 1–10
+        let page1 = client.get_lab_results(&pet_id, &owner, &0u64, &10u32, &None, &None);
+        assert_eq!(page1.len(), 10, "page 1 should have 10 results");
+
+        // Page 2: offset=10, limit=10 → items 11–20 (this is the broken case from issue #32)
+        let page2 = client.get_lab_results(&pet_id, &owner, &10u64, &10u32, &None, &None);
+        assert_eq!(page2.len(), 10, "page 2 should have 10 results (offset >= limit was broken)");
+
+        // Page 3: offset=20, limit=10 → items 21–25 (5 remaining)
+        let page3 = client.get_lab_results(&pet_id, &owner, &20u64, &10u32, &None, &None);
+        assert_eq!(page3.len(), 5, "page 3 should have the 5 remaining results");
+
+        // Sanity: no item appears on two pages (check by timestamp uniqueness)
+        let p1_timestamps: std::collections::HashSet<u64> =
+            page1.iter().map(|r| r.date).collect();
+        let p2_timestamps: std::collections::HashSet<u64> =
+            page2.iter().map(|r| r.date).collect();
+        let p3_timestamps: std::collections::HashSet<u64> =
+            page3.iter().map(|r| r.date).collect();
+
+        assert!(
+            p1_timestamps.is_disjoint(&p2_timestamps),
+            "pages 1 and 2 must not overlap"
+        );
+        assert!(
+            p2_timestamps.is_disjoint(&p3_timestamps),
+            "pages 2 and 3 must not overlap"
+        );
+        assert_eq!(
+            p1_timestamps.len() + p2_timestamps.len() + p3_timestamps.len(),
+            25,
+            "all 25 records must appear exactly once across the three pages"
+        );
+    }
 }

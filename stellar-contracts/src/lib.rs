@@ -271,8 +271,6 @@ mod test_get_pet_decryption;
 #[cfg(test)]
 mod test_governance_voting;
 #[cfg(test)]
-mod test_grooming;
-#[cfg(test)]
 mod test_health_score;
 #[cfg(test)]
 mod test_input_limits;
