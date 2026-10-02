@@ -2167,4 +2167,3 @@ fn test_get_activity_record_by_id_multiple_records() {
             count_7
         );
     }
-} // end mod test_activity

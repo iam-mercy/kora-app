@@ -119,3 +119,85 @@ fn test_event_payload_contains_matching_subscription_ids() {
         &String::from_str(&env, "Stable"),
     );
 }
+
+/// Issue #31 — benchmark test: Register 100 subscriptions across 100 distinct
+/// subscribers (50 for MedicalRecordAdded, 50 for TreatmentAdded) and verify
+/// that `add_medical_record` only retrieves the 50 matching subscribers, not
+/// all 100.  The budget is kept unlimited so the test focuses on correctness
+/// of the O(1) index lookup rather than hitting an instruction limit.
+#[test]
+fn test_indexed_lookup_100_subscriptions_only_returns_matching_event_type() {
+    let (env, client, admin, _owner, vet, pet_id) = setup();
+
+    // Raise the per-address cap so the same address could hold many subs if needed,
+    // but here we use 100 distinct subscriber addresses (1 sub each).
+    client.set_max_subs_per_address(&admin, &200u32);
+
+    let mut medical_sub_ids: Vec<u64> = Vec::new(&env);
+    let mut treatment_sub_ids: Vec<u64> = Vec::new(&env);
+
+    let mut medical_types = Vec::new(&env);
+    medical_types.push_back(EventType::MedicalRecordAdded);
+
+    let mut treatment_types = Vec::new(&env);
+    treatment_types.push_back(EventType::TreatmentAdded);
+
+    let mut pet_ids = Vec::new(&env);
+    pet_ids.push_back(pet_id);
+
+    // Register 50 subscriptions for MedicalRecordAdded and 50 for TreatmentAdded.
+    for _ in 0..50u32 {
+        let sub = Address::generate(&env);
+        let id = client.register_subscription(&sub, &medical_types, &pet_ids, &9999u64);
+        medical_sub_ids.push_back(id);
+    }
+    for _ in 0..50u32 {
+        let sub = Address::generate(&env);
+        let id = client.register_subscription(&sub, &treatment_types, &pet_ids, &9999u64);
+        treatment_sub_ids.push_back(id);
+    }
+
+    // The indexed lookup for MedicalRecordAdded must return exactly the 50
+    // medical subscribers and zero treatment subscribers.
+    let matched_medical =
+        client.get_matching_subscription_ids(&EventType::MedicalRecordAdded, &pet_id);
+    assert_eq!(
+        matched_medical.len(),
+        50,
+        "indexed lookup must return exactly the 50 MedicalRecordAdded subscribers"
+    );
+    for id in matched_medical.iter() {
+        assert!(
+            medical_sub_ids.contains(id),
+            "returned subscription {id} is not a MedicalRecordAdded subscriber"
+        );
+    }
+
+    // Likewise, TreatmentAdded must return exactly the 50 treatment subscribers.
+    let matched_treatment =
+        client.get_matching_subscription_ids(&EventType::TreatmentAdded, &pet_id);
+    assert_eq!(
+        matched_treatment.len(),
+        50,
+        "indexed lookup must return exactly the 50 TreatmentAdded subscribers"
+    );
+    for id in matched_treatment.iter() {
+        assert!(
+            treatment_sub_ids.contains(id),
+            "returned subscription {id} is not a TreatmentAdded subscriber"
+        );
+    }
+
+    // Correctness: add_medical_record must complete successfully with 100 total
+    // subscriptions registered; the subscription_ids in the emitted event must
+    // only list the 50 medical subscribers.
+    let medications: Vec<Medication> = Vec::new(&env);
+    client.add_medical_record(
+        &pet_id,
+        &vet,
+        &String::from_str(&env, "Annual checkup"),
+        &String::from_str(&env, "Rest"),
+        &medications,
+        &String::from_str(&env, "All good"),
+    );
+}

@@ -113,6 +113,7 @@ mod test_grooming {
         );
         client.add_grooming_photo(&extra_record, &String::from_str(&env, "bafyoverflow"));
     }
+}
 
 use crate::{Gender, KoraContract, KoraContractClient, PrivacyLevel, Species};
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
