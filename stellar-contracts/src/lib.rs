@@ -6277,32 +6277,46 @@ impl KoraContract {
         Self::store_pet(&env, id, &pet);
     }
 
+    /// Issue #263: Archive pet with active status verification and event emission
     pub fn archive_pet(env: Env, pet_id: u64) {
         let mut pet: Pet = Self::load_pet(&env, pet_id)
             .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
         pet.owner.require_auth();
-        if pet.active {
-            let active_count: u64 = env
-                .storage()
-                .instance()
-                .get(&StatsKey::ActivePetsCount)
-                .unwrap_or(0);
-            if active_count > 0 {
-                env.storage()
-                    .instance()
-                    .set(&StatsKey::ActivePetsCount, &(active_count - 1));
-                Self::record_stat_point(
-                    &env,
-                    String::from_str(&env, "ActivePetsCount"),
-                    active_count - 1,
-                );
-            }
+
+        // Issue #263: Verify pet is active before archiving
+        if !pet.active {
+            panic_with_error!(&env, ContractError::InvalidState);
         }
+
+        // Issue #263: Prevent redundant archiving (already archived check)
+        if pet.archived {
+            panic_with_error!(&env, ContractError::AlreadyDeleted);
+        }
+
+        // Decrement active pets count
+        let active_count: u64 = env
+            .storage()
+            .instance()
+            .get(&StatsKey::ActivePetsCount)
+            .unwrap_or(0);
+        if active_count > 0 {
+            env.storage()
+                .instance()
+                .set(&StatsKey::ActivePetsCount, &(active_count - 1));
+            Self::record_stat_point(
+                &env,
+                String::from_str(&env, "ActivePetsCount"),
+                active_count - 1,
+            );
+        }
+
         pet.archived = true;
         pet.active = false;
         let timestamp = env.ledger().timestamp();
         pet.updated_at = timestamp;
         Self::store_pet(&env, pet_id, &pet);
+
+        // Issue #263: Emit structured event
         env.events().publish(
             (String::from_str(&env, "PetArchived"), pet_id),
             PetArchivedEvent {
@@ -6314,6 +6328,7 @@ impl KoraContract {
         );
     }
 
+    /// Issue #263: Unarchive pet with owner authorization and event emission
     pub fn unarchive_pet(env: Env, pet_id: u64) {
         let mut pet: Pet = env
             .storage()
@@ -6321,10 +6336,24 @@ impl KoraContract {
             .get(&DataKey::Pet(pet_id))
             .unwrap_or_else(|| env.panic_with_error(ContractError::PetNotFound));
         pet.owner.require_auth();
+
+        // Issue #263: Verify pet is currently archived
+        if !pet.archived {
+            panic_with_error!(&env, ContractError::InvalidState);
+        }
+
+        // Issue #263: Cannot unarchive if already active (prevent state inconsistency)
+        if pet.active {
+            panic_with_error!(&env, ContractError::InvalidState);
+        }
+
         pet.archived = false;
+        pet.active = true;
         let timestamp = env.ledger().timestamp();
         pet.updated_at = timestamp;
         Self::store_pet(&env, pet_id, &pet);
+
+        // Issue #263: Emit structured event
         env.events().publish(
             (String::from_str(&env, "PetUnarchived"), pet_id),
             PetUnarchivedEvent {
@@ -6410,11 +6439,15 @@ impl KoraContract {
         offset: u64,
         limit: u32,
     ) -> Vec<String> {
+        // Issue #265: Enforce caller authorization
+        caller.require_auth();
+
         if let Some(pet) = env
             .storage()
             .instance()
             .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
         {
+            // Issue #265: Validate privacy level access
             let allowed = pet.privacy_level == PrivacyLevel::Public
                 || pet.owner == caller
                 || Self::check_access(env.clone(), pet_id, caller) != AccessLevel::None;
@@ -7515,10 +7548,16 @@ impl KoraContract {
         }
     }
 
-    /*
     /// Update clinic info for a vet. Only the vet can update their own clinic info.
+    /// Issue #264: Validate clinic_info string length (1-1024 chars)
     pub fn update_clinic_info(env: Env, vet_address: Address, clinic_info: String) -> bool {
         vet_address.require_auth();
+
+        // Issue #264: Validate non-empty string and max length
+        let clinic_info_len = clinic_info.len();
+        if clinic_info_len == 0 || clinic_info_len > 1024 {
+            panic_with_error!(&env, ContractError::InputStringTooLong);
+        }
 
         if let Some(mut vet) = env
             .storage()
@@ -7534,7 +7573,6 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::VetNotFound);
         }
     }
-    */
 
     // Pet Vaccination Record
     #[allow(clippy::too_many_arguments)]
@@ -14059,11 +14097,33 @@ impl KoraContract {
             })
     }
 
+    /// Issue #262: Set contract version with semantic versioning validation
     pub fn set_version(env: Env, admin: Address, major: u32, minor: u32, patch: u32) {
         admin.require_auth();
         if !Self::is_admin_address(&env, &admin) {
             panic_with_error!(&env, ContractError::NotAnAdmin);
         }
+
+        // Issue #262: Reject invalid version 0.0.0
+        if major == 0 && minor == 0 && patch == 0 {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+
+        // Issue #262: Validate monotonic version progression
+        if let Some(current_version) = env
+            .storage()
+            .instance()
+            .get::<DataKey, ContractVersion>(&DataKey::ContractVersion)
+        {
+            // New version must be greater than current version
+            let current_tuple = (current_version.major, current_version.minor, current_version.patch);
+            let new_tuple = (major, minor, patch);
+
+            if new_tuple <= current_tuple {
+                panic_with_error!(&env, ContractError::InvalidState);
+            }
+        }
+
         let version = ContractVersion {
             major,
             minor,
