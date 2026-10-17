@@ -77,6 +77,10 @@ pub struct PendingTransfer {
 pub const DEFAULT_TRANSFER_TIMEOUT_SECONDS: u64 = 7 * 24 * 60 * 60; // 604 800 s
 pub const MAX_TRANSFER_TIMEOUT_DAYS: u32 = 90;
 
+/// Maximum adoption waiting period (in days). Prevents unreasonably long
+/// adoption waiting periods. (Issue #249)
+pub const MAX_ADOPTION_WAITING_PERIOD_DAYS: u32 = 365;
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OwnershipRecord {
@@ -573,9 +577,14 @@ impl PetOwnershipContract {
     /// Set the global adoption waiting period (in days).
     /// Only configurable if no default config has been set yet.
     /// The caller is stored as the adoption admin for future `update_adoption_config` calls.
+    /// Emits an `AdoptionConfigUpdated` event.
+    /// Issue #249: validates that waiting_period_days does not exceed MAX_ADOPTION_WAITING_PERIOD_DAYS.
     pub fn set_adoption_config(env: Env, waiting_period_days: u32, admin: Address) {
         if env.storage().persistent().has(&DataKey::AdoptionConfig) {
             panic_with_error!(&env, ContractError::AdoptionNotConfigurable);
+        }
+        if waiting_period_days > MAX_ADOPTION_WAITING_PERIOD_DAYS {
+            panic_with_error!(&env, ContractError::InvalidWaitingPeriod);
         }
         admin.require_auth();
         let config = AdoptionConfig {
@@ -586,15 +595,24 @@ impl PetOwnershipContract {
             .persistent()
             .set(&DataKey::AdoptionConfig, &config);
         env.storage().persistent().set(&DataKey::Admin, &admin);
+        env.events().publish(
+            (Symbol::new(&env, "cfg_adoption"),),
+            (0u32, waiting_period_days),
+        );
     }
 
     /// Update the global adoption waiting period (in days).
     /// Only callable by the admin stored during `set_adoption_config`.
     /// Emits an `AdoptionConfigUpdated` event with old and new values.
+    /// Issue #249: validates that waiting_period_days does not exceed MAX_ADOPTION_WAITING_PERIOD_DAYS.
     /// Closes issue #1007.
     pub fn update_adoption_config(env: Env, waiting_period_days: u32) {
         let admin: Address = get_adoption_admin(&env);
         admin.require_auth();
+
+        if waiting_period_days > MAX_ADOPTION_WAITING_PERIOD_DAYS {
+            panic_with_error!(&env, ContractError::InvalidWaitingPeriod);
+        }
 
         let old_config: AdoptionConfig = env
             .storage()
@@ -642,12 +660,30 @@ impl PetOwnershipContract {
     }
 
     /// Sign an adoption agreement, entering the waiting period.
+    /// Issue #247: Blocks adoption if there's an active (unresolved) custody dispute.
+    /// Issue #246: Validates that organization address doesn't match owner or adopter.
     pub fn sign_adoption(env: Env, pet_id: u64, to: Address, organization: Option<Address>) {
         let pet = get_pet(&env, pet_id);
         pet.current_owner.require_auth();
 
         if pet.current_owner == to {
             panic_with_error!(&env, ContractError::InvalidRecipient);
+        }
+
+        if let Some(ref org) = organization {
+            if &pet.current_owner == org || &to == org {
+                panic_with_error!(&env, ContractError::InvalidRecipient);
+            }
+        }
+
+        if let Some(escrowed) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, EscrowedTransfer>(&DataKey::EscrowedTransfer(pet_id))
+        {
+            if escrowed.disputed {
+                panic_with_error!(&env, ContractError::TransferDisputed);
+            }
         }
 
         if env
