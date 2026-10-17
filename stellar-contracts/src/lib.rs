@@ -518,6 +518,7 @@ pub enum ContractError {
     TooManySearchTokens = 168,
     InvalidRecipient = 169,
     PetIsArchived = 170,
+    BootstrapNotInitiated = 171,
 }
 
 // --- MULTI-LANGUAGE ERROR REGISTRY (Issue #684) ---
@@ -1467,6 +1468,14 @@ pub enum SystemKey {
     // Admin activity log keys (Issue #816)
     AdminActivityLog(u64), // index -> AdminActivityEntry
     AdminActivityCount,    // Total number of recorded admin actions
+    AdminActivityByAdmin((Address, u64)), // (admin_address, index) -> activity_id for indexed lookups (Issue #256)
+    AdminActivityCountByAdmin(Address), // admin_address -> count of activities by this admin (Issue #256)
+
+    // Active threshold change proposals (Issue #257)
+    PendingThresholdChangeActive, // Count of ACTIVE (non-expired) pending threshold change proposals
+
+    // Multisig bootstrap phases (Issues #254, #255)
+    PendingInitPhase, // Stores the current bootstrap phase state (ProposeInit, ConfirmInit, or Activated)
 }
 
 /// Statistics snapshot for governance reporting (Issue #828)
@@ -2636,6 +2645,60 @@ pub struct GroomingRecordCreatedEvent {
     pub groomer: Address,
     pub timestamp: u64,
     pub subscription_ids: Vec<u64>,
+}
+
+/// Tracks multisig bootstrap phase state (Issues #254, #255)
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BootstrapPhase {
+    ProposeInit {
+        admins: Vec<Address>,
+        threshold: u32,
+        proposer: Address,
+        confirmations: Vec<Address>,
+        expires_at: u64,
+    },
+    ConfirmInit {
+        admins: Vec<Address>,
+        threshold: u32,
+        confirmations: Vec<Address>,
+        expires_at: u64,
+    },
+    Activated,
+}
+
+/// Emitted when multisig bootstrap is proposed (Issue #255).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigBootstrapProposedEvent {
+    pub version: u32,
+    pub proposer: Address,
+    pub admins_count: u32,
+    pub threshold: u32,
+    pub expires_at: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when multisig bootstrap confirmation is submitted (Issue #255).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigBootstrapConfirmedEvent {
+    pub version: u32,
+    pub confirmer: Address,
+    pub confirmations_count: u32,
+    pub threshold: u32,
+    pub timestamp: u64,
+}
+
+/// Emitted when multisig bootstrap is activated (Issue #255, #254).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultisigBootstrapActivatedEvent {
+    pub version: u32,
+    pub activator: Address,
+    pub admins_count: u32,
+    pub threshold: u32,
+    pub timestamp: u64,
 }
 
 #[contracttype]
@@ -4459,6 +4522,193 @@ impl KoraContract {
         );
     }
 
+    /// Phase 1: Propose multisig bootstrap configuration
+    /// Issue #255: Emit event for propose_init phase
+    /// Issue #254: Store pending bootstrap state for later activation
+    pub fn propose_init(
+        env: Env,
+        proposer: Address,
+        admins: Vec<Address>,
+        threshold: u32,
+    ) {
+        // Check if already initialized
+        if env.storage().instance().has(&SystemKey::Admins) {
+            panic_with_error!(&env, ContractError::AdminAlreadySet);
+        }
+        if threshold == 0 || threshold > admins.len() {
+            panic_with_error!(&env, ContractError::InvalidThreshold);
+        }
+
+        proposer.require_auth();
+        if !admins.contains(proposer.clone()) {
+            panic_with_error!(&env, ContractError::InvokerNotInAdminList);
+        }
+
+        let now = env.ledger().timestamp();
+        let expires_at = now.saturating_add(7 * 86400); // 7 days
+
+        let phase = BootstrapPhase::ProposeInit {
+            admins: admins.clone(),
+            threshold,
+            proposer: proposer.clone(),
+            confirmations: {
+                let mut confs = Vec::new(&env);
+                confs.push_back(proposer.clone());
+                confs
+            },
+            expires_at,
+        };
+
+        env.storage()
+            .instance()
+            .set(&SystemKey::PendingInitPhase, &phase);
+
+        env.events().publish(
+            (Symbol::new(&env, "MultisigBootstrapProposed"),),
+            MultisigBootstrapProposedEvent {
+                version: EVENT_SCHEMA_VERSION,
+                proposer,
+                admins_count: admins.len() as u32,
+                threshold,
+                expires_at,
+                timestamp: now,
+            },
+        );
+    }
+
+    /// Phase 2: Confirm multisig bootstrap configuration
+    /// Issue #255: Emit event for confirm_init phase
+    pub fn confirm_init(env: Env, confirmer: Address) {
+        confirmer.require_auth();
+
+        let now = env.ledger().timestamp();
+        let phase = env
+            .storage()
+            .instance()
+            .get::<SystemKey, BootstrapPhase>(&SystemKey::PendingInitPhase)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::BootstrapNotInitiated));
+
+        match phase {
+            BootstrapPhase::ProposeInit {
+                ref admins,
+                threshold,
+                ref confirmations,
+                expires_at,
+                ..
+            } => {
+                if now > expires_at {
+                    panic_with_error!(&env, ContractError::ProposalExpired);
+                }
+                if !admins.contains(&confirmer) {
+                    panic_with_error!(&env, ContractError::Unauthorized);
+                }
+                if confirmations.contains(&confirmer) {
+                    panic_with_error!(&env, ContractError::AdminAlreadyApproved);
+                }
+
+                let mut new_confirmations = confirmations.clone();
+                new_confirmations.push_back(confirmer.clone());
+
+                if new_confirmations.len() as u32 >= threshold {
+                    // Move to ConfirmInit phase
+                    let next_phase = BootstrapPhase::ConfirmInit {
+                        admins: admins.clone(),
+                        threshold,
+                        confirmations: new_confirmations.clone(),
+                        expires_at,
+                    };
+                    env.storage()
+                        .instance()
+                        .set(&SystemKey::PendingInitPhase, &next_phase);
+                } else {
+                    // Stay in ProposeInit phase
+                    let next_phase = BootstrapPhase::ProposeInit {
+                        admins: admins.clone(),
+                        threshold,
+                        proposer: confirmer.clone(),
+                        confirmations: new_confirmations.clone(),
+                        expires_at,
+                    };
+                    env.storage()
+                        .instance()
+                        .set(&SystemKey::PendingInitPhase, &next_phase);
+                }
+
+                env.events().publish(
+                    (Symbol::new(&env, "MultisigBootstrapConfirmed"),),
+                    MultisigBootstrapConfirmedEvent {
+                        version: EVENT_SCHEMA_VERSION,
+                        confirmer,
+                        confirmations_count: new_confirmations.len() as u32,
+                        threshold,
+                        timestamp: now,
+                    },
+                );
+            }
+            _ => panic_with_error!(&env, ContractError::BootstrapNotInitiated),
+        }
+    }
+
+    /// Phase 3: Activate multisig bootstrap configuration
+    /// Issue #255: Emit event for activate_init phase
+    /// Issue #254: Synchronize DataKey::Admin when activating multisig
+    pub fn activate_init(env: Env, activator: Address) {
+        activator.require_auth();
+
+        let now = env.ledger().timestamp();
+        let phase = env
+            .storage()
+            .instance()
+            .get::<SystemKey, BootstrapPhase>(&SystemKey::PendingInitPhase)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::BootstrapNotInitiated));
+
+        match phase {
+            BootstrapPhase::ConfirmInit {
+                admins,
+                threshold,
+                confirmations,
+                expires_at,
+            } => {
+                if now > expires_at {
+                    panic_with_error!(&env, ContractError::ProposalExpired);
+                }
+                if !admins.contains(&activator) {
+                    panic_with_error!(&env, ContractError::Unauthorized);
+                }
+
+                // Issue #254: Set DataKey::Admin for legacy function compatibility
+                // Use the first admin as the primary admin contact point
+                let primary_admin = admins.get(0).unwrap();
+                env.storage()
+                    .instance()
+                    .set(&DataKey::Admin, &primary_admin);
+
+                // Set multisig configuration
+                env.storage().instance().set(&SystemKey::Admins, &admins);
+                env.storage()
+                    .instance()
+                    .set(&SystemKey::AdminThreshold, &threshold);
+
+                // Mark bootstrap as completed
+                env.storage()
+                    .instance()
+                    .set(&SystemKey::PendingInitPhase, &BootstrapPhase::Activated);
+
+                env.events().publish(
+                    (Symbol::new(&env, "MultisigBootstrapActivated"),),
+                    MultisigBootstrapActivatedEvent {
+                        version: EVENT_SCHEMA_VERSION,
+                        activator,
+                        admins_count: admins.len() as u32,
+                        threshold,
+                        timestamp: now,
+                    },
+                );
+            }
+            _ => panic_with_error!(&env, ContractError::BootstrapNotInitiated),
+        }
+    }
+
     pub fn get_admins(env: Env) -> Vec<Address> {
         if let Some(admin) = env
             .storage()
@@ -4486,6 +4736,7 @@ impl KoraContract {
     }
 
     /// Appends an entry to the admin activity log (Issue #816).
+    /// Issue #256: Also maintains indexed lookups for efficient per-admin queries.
     fn record_admin_activity(env: &Env, actor: &Address, action: &str) {
         let count: u64 = env
             .storage()
@@ -4504,6 +4755,22 @@ impl KoraContract {
         env.storage()
             .instance()
             .set(&SystemKey::AdminActivityCount, &next);
+
+        // Issue #256: Maintain indexed lookup for this admin's activities
+        let admin_activity_count: u64 = env
+            .storage()
+            .instance()
+            .get(&SystemKey::AdminActivityCountByAdmin(actor.clone()))
+            .unwrap_or(0);
+        let admin_next = admin_activity_count + 1;
+        env.storage().instance().set(
+            &SystemKey::AdminActivityByAdmin((actor.clone(), admin_next)),
+            &next,
+        );
+        env.storage().instance().set(
+            &SystemKey::AdminActivityCountByAdmin(actor.clone()),
+            &admin_next,
+        );
     }
 
     /// Returns a paginated view of on-chain actions performed by `admin`.
@@ -4531,35 +4798,30 @@ impl KoraContract {
         let total_count: u64 = env
             .storage()
             .instance()
-            .get(&SystemKey::AdminActivityCount)
+            .get(&SystemKey::AdminActivityCountByAdmin(admin.clone()))
             .unwrap_or(0);
 
-        let mut matches: Vec<AdminActivityEntry> = Vec::new(&env);
-        for i in 1..=total_count {
-            if let Some(entry) = env
-                .storage()
-                .instance()
-                .get::<SystemKey, AdminActivityEntry>(&SystemKey::AdminActivityLog(i))
-            {
-                if entry.actor == admin {
-                    matches.push_back(entry);
-                }
-            }
-        }
-
-        let total = matches.len() as u64;
         let start = (page as u64).saturating_mul(size as u64) as u32;
         let mut items = Vec::new(&env);
         for i in start..start.saturating_add(size) {
-            match matches.get(i) {
-                Some(entry) => items.push_back(entry),
-                None => break,
+            if let Some(activity_id) = env
+                .storage()
+                .instance()
+                .get::<SystemKey, u64>(&SystemKey::AdminActivityByAdmin((admin.clone(), i as u64)))
+            {
+                if let Some(entry) = env
+                    .storage()
+                    .instance()
+                    .get::<SystemKey, AdminActivityEntry>(&SystemKey::AdminActivityLog(activity_id))
+                {
+                    items.push_back(entry);
+                }
             }
         }
 
         AdminActivityPage {
             items,
-            total,
+            total: total_count,
             page,
             page_size: size,
         }
@@ -4581,35 +4843,55 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::InvalidThreshold);
         }
 
-        let proposal_count: u64 = env
-            .storage()
-            .instance()
-            .get(&SystemKey::PendingThresholdChangeCount)
-            .unwrap_or(0);
         let now = env.ledger().timestamp();
         let mut proposal_id = 0;
         let mut pending = None;
-        for id in 1..=proposal_count {
+
+        // Issue #257: Iterate only over active proposals instead of all historical ones
+        let active_proposal_count: u64 = env
+            .storage()
+            .instance()
+            .get(&SystemKey::PendingThresholdChangeActive)
+            .unwrap_or(0);
+
+        // Check if a matching active proposal exists
+        for id in 1..=active_proposal_count {
             if let Some(candidate) = env
                 .storage()
                 .instance()
                 .get::<SystemKey, PendingThresholdChange>(&SystemKey::PendingThresholdChange(id))
             {
-                if candidate.new_threshold == new_threshold {
-                    if now > candidate.expires_at {
-                        env.storage()
-                            .instance()
-                            .remove(&SystemKey::PendingThresholdChange(id));
-                        continue;
-                    }
+                if candidate.new_threshold == new_threshold && now <= candidate.expires_at {
                     proposal_id = id;
                     pending = Some(candidate);
                     break;
                 }
             }
         }
+
+        // Cleanup expired proposals in active range
+        if pending.is_none() && active_proposal_count > 0 {
+            for id in 1..=active_proposal_count {
+                if let Some(candidate) = env
+                    .storage()
+                    .instance()
+                    .get::<SystemKey, PendingThresholdChange>(&SystemKey::PendingThresholdChange(id))
+                {
+                    if now > candidate.expires_at {
+                        env.storage()
+                            .instance()
+                            .remove(&SystemKey::PendingThresholdChange(id));
+                    }
+                }
+            }
+        }
         let mut pending = pending.unwrap_or_else(|| {
-            proposal_id = proposal_count.saturating_add(1);
+            let total_proposal_count: u64 = env
+                .storage()
+                .instance()
+                .get(&SystemKey::PendingThresholdChangeCount)
+                .unwrap_or(0);
+            proposal_id = total_proposal_count.saturating_add(1);
             PendingThresholdChange {
                 new_threshold,
                 approvals: Vec::new(&env),
@@ -4630,6 +4912,17 @@ impl KoraContract {
             env.storage()
                 .instance()
                 .set(&SystemKey::PendingThresholdChangeCount, &proposal_id);
+            // Issue #257: Track this as an active proposal
+            let active_count = env
+                .storage()
+                .instance()
+                .get(&SystemKey::PendingThresholdChangeActive)
+                .unwrap_or(0);
+            if proposal_id > active_count {
+                env.storage()
+                    .instance()
+                    .set(&SystemKey::PendingThresholdChangeActive, &proposal_id);
+            }
             return;
         }
 
