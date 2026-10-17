@@ -1514,6 +1514,7 @@ impl PetOwnershipContract {
     /// Transfer multiple pets to the same new owner atomically.
     /// All pets must be owned by the same caller and the batch is rejected
     /// if any pet is missing or owned by a different address.
+    /// Issue #250: Reject batch if any pet has pending transfer, active dispute, or pending adoption.
     pub fn batch_transfer(env: Env, pet_ids: Vec<u64>, to: Address) {
         const MAX_BATCH_SIZE: u32 = 20;
 
@@ -1540,6 +1541,27 @@ impl PetOwnershipContract {
                     panic_with_error!(env, ContractError::BatchOwnerMismatch);
                 }
                 _ => {}
+            }
+
+            // Check for pending transfers (prevents batch_transfer bypass)
+            if env.storage().persistent().has(&DataKey::PendingTransfer(pet_id)) {
+                panic_with_error!(&env, ContractError::TransferAlreadyPending);
+            }
+
+            // Check for active disputes (prevents batch_transfer bypass)
+            if let Some(escrowed) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, EscrowedTransfer>(&DataKey::EscrowedTransfer(pet_id))
+            {
+                if escrowed.disputed {
+                    panic_with_error!(&env, ContractError::TransferDisputed);
+                }
+            }
+
+            // Check for pending adoptions (prevents batch_transfer bypass)
+            if env.storage().persistent().has(&DataKey::PendingAdoption(pet_id)) {
+                panic_with_error!(&env, ContractError::TransferAlreadyPending);
             }
 
             pets.push_back(pet);
@@ -1602,16 +1624,41 @@ impl PetOwnershipContract {
         get_history(&env, pet_id)
     }
 
-    pub fn get_owner_pets(env: Env, owner: Address) -> Vec<u64> {
-        get_owner_pet_ids(&env, &owner)
+    /// Get paginated list of pet IDs owned by an address.
+    /// Issue #252: Pagination to prevent excessive gas consumption for large collections.
+    pub fn get_owner_pets(env: Env, owner: Address, offset: u64, limit: u32) -> Vec<u64> {
+        let all_pets = get_owner_pet_ids(&env, &owner);
+        let total = all_pets.len() as u64;
+
+        if offset >= total || limit == 0 {
+            return Vec::new(&env);
+        }
+
+        let clamped_limit = limit.min(crate::MAX_PAGINATION_LIMIT);
+        let end = ((offset + clamped_limit as u64).min(total)) as usize;
+
+        all_pets.slice(offset as usize..end)
     }
 
-    /// Return the full chain-of-custody log for `pet_id` in chronological order.
-    pub fn get_custody_chain(env: Env, pet_id: u64) -> Vec<CustodyEntry> {
-        env.storage()
+    /// Return paginated chain-of-custody log for `pet_id` in chronological order.
+    /// Issue #251: Pagination to prevent memory bloat from frequently-traded pets.
+    pub fn get_custody_chain(env: Env, pet_id: u64, offset: u64, limit: u32) -> Vec<CustodyEntry> {
+        let full_chain: Vec<CustodyEntry> = env
+            .storage()
             .persistent()
             .get(&DataKey::CustodyChain(pet_id))
-            .unwrap_or_else(|| Vec::new(&env))
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let total = full_chain.len() as u64;
+
+        if offset >= total || limit == 0 {
+            return Vec::new(&env);
+        }
+
+        let clamped_limit = limit.min(crate::MAX_PAGINATION_LIMIT);
+        let end = ((offset + clamped_limit as u64).min(total)) as usize;
+
+        full_chain.slice(offset as usize..end)
     }
 
     pub fn has_pending_transfer(env: Env, pet_id: u64) -> bool {
