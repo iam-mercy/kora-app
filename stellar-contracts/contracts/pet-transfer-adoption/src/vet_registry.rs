@@ -55,6 +55,7 @@ enum DataKey {
 const EVT_REGISTERED: Symbol = symbol_short!("reg_vet");
 const EVT_VERIFIED: Symbol = symbol_short!("ver_vet");
 const EVT_REVOKED: Symbol = symbol_short!("rev_vet");
+const EVT_ADMIN_TRANSFERRED: Symbol = symbol_short!("adm_xfer");
 
 /// ======================================================
 /// ERRORS
@@ -127,9 +128,17 @@ impl VetRegistryContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
     }
 
+    /// Transfer admin ownership to a new address.
+    /// Issue #243: Emits AdminTransferred event for observability.
     pub fn transfer_admin(env: Env, new_admin: Address) {
-        require_admin(&env);
+        let current_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Admin not found");
+        current_admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.events().publish((EVT_ADMIN_TRANSFERRED,), (current_admin, new_admin));
     }
 
     /// ----------------------------------
@@ -267,6 +276,7 @@ impl VetRegistryContract {
     ///
     /// # Returns
     /// `Vec<Vet>` — Paginated list of vets
+    /// Issue #242: Enforces maximum pagination limit to prevent excessive storage reads.
     pub fn list_vets(env: Env, offset: u64, limit: u32) -> Vec<Vet> {
         let count: u64 = env
             .storage()
@@ -280,8 +290,11 @@ impl VetRegistryContract {
             return vets;
         }
 
+        // Enforce maximum limit to prevent excessive storage reads
+        let clamped_limit = limit.min(crate::MAX_PAGINATION_LIMIT);
+
         let start_index = offset + 1; // Indices are 1-based
-        let end_index = (offset + limit as u64).min(count);
+        let end_index = (offset + clamped_limit as u64).min(count);
 
         for i in start_index..=end_index {
             if let Some(vet_address) = env

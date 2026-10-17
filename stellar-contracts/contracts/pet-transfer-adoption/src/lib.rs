@@ -171,6 +171,15 @@ pub const MAX_OWNERSHIP_HISTORY_LEN: u32 = 512;
 /// Maximum length for a rejection reason string.
 pub const MAX_REJECTION_REASON_LEN: u32 = 256;
 
+/// Maximum length for a waiver reason string (Issue #245).
+pub const MAX_WAIVER_REASON_LEN: u32 = 256;
+
+/// Maximum adoption waiting period in days (Issue #244).
+pub const MAX_ADOPTION_WAITING_PERIOD_DAYS: u32 = 365;
+
+/// Maximum limit for list pagination (Issue #242).
+pub const MAX_PAGINATION_LIMIT: u32 = 1000;
+
 fn validate_len(env: &Env, s: &String, max: u32) {
     if s.len() > max {
         panic_with_error!(env, ContractError::InputStringTooLong);
@@ -632,9 +641,15 @@ impl PetOwnershipContract {
 
     /// Set a per-species adoption waiting period override.
     /// Only callable by the admin stored during `set_adoption_config`.
+    /// Issue #244: Enforces maximum waiting period to prevent accidental lockout.
     pub fn set_species_adoption_config(env: Env, species: String, waiting_period_days: u32) {
         let admin: Address = get_adoption_admin(&env);
         admin.require_auth();
+
+        if waiting_period_days > MAX_ADOPTION_WAITING_PERIOD_DAYS {
+            panic_with_error!(&env, ContractError::InvalidWaitingPeriod);
+        }
+
         env.storage().persistent().set(
             &DataKey::SpeciesAdoptionConfig(species),
             &waiting_period_days,
@@ -1009,8 +1024,10 @@ impl PetOwnershipContract {
     }
 
     /// Allow a multisig admin to waive the waiting period for a specific adoption.
+    /// Issue #245: Validates reason string length to prevent storage bloat.
     pub fn waive_waiting_period(env: Env, pet_id: u64, admin: Address, reason: String) {
         admin.require_auth();
+        validate_len(&env, &reason, MAX_WAIVER_REASON_LEN);
         // Verify the caller is a registered multisig admin. (Issue #128)
         require_trusted_multisig_admin(&env, &admin);
         let pending: PendingAdoption = env
