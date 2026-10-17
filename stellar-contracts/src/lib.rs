@@ -327,7 +327,7 @@ const DEFAULT_NONCE_MAX_USES: u32 = 1;
 #[allow(dead_code)]
 const NONCE_HISTORY_LIMIT: u32 = 8;
 #[allow(dead_code)]
-const MAX_SEARCH_KEYWORD_LEN: u32 = 32;
+const MAX_SEARCH_KEYWORD_LEN: u32 = 64;
 #[allow(dead_code)]
 const MAX_SEARCH_TOKENS_PER_RECORD: u32 = 16;
 #[allow(dead_code)]
@@ -518,6 +518,10 @@ pub enum ContractError {
     TooManySearchTokens = 168,
     InvalidRecipient = 169,
     PetIsArchived = 170,
+    /// Keyword supplied to search_by_keyword is shorter than the minimum (2 bytes). (#268)
+    KeywordTooShort = 171,
+    /// Input string exceeds the maximum allowed byte length for this field. (#269, #266)
+    InputTooLong = 172,
 }
 
 // --- MULTI-LANGUAGE ERROR REGISTRY (Issue #684) ---
@@ -14199,6 +14203,9 @@ impl KoraContract {
 
     pub fn search_by_keyword(env: Env, pet_id: u64, keyword: String, caller: Address) -> Vec<MedicalRecord> {
         Self::require_medical_read_access(&env, pet_id, &caller);
+        if keyword.len() < 2 {
+            panic_with_error!(&env, ContractError::KeywordTooShort);
+        }
         if keyword.len() > crate::MAX_SEARCH_KEYWORD_LEN {
             panic_with_error!(&env, ContractError::KeywordTooLong);
         }
@@ -14228,6 +14235,10 @@ impl KoraContract {
     }
 
     pub fn update_medical_record_notes(env: Env, record_id: u64, notes: String) -> bool {
+        // Enforce the same 500-byte cap that other note fields respect (#269).
+        if notes.len() > 500 {
+            panic_with_error!(&env, ContractError::InputTooLong);
+        }
         if let Some(mut record) = Self::load_medical_record(&env, record_id) {
             record.vet_address.require_auth();
 
@@ -14335,6 +14346,110 @@ impl KoraContract {
         }
         diffs
     }
+
+    // -------------------------------------------------------------------------
+    // CROSS-CHAIN IDENTITY  (Issue #266)
+    // -------------------------------------------------------------------------
+
+    /// Maximum byte length of a cross-chain network name (e.g. "ethereum").
+    const MAX_CHAIN_NAME_LEN: u32 = 32;
+    /// Maximum byte length of an external chain address (e.g. a 0x-prefixed hex address).
+    const MAX_EXTERNAL_ADDRESS_LEN: u32 = 128;
+
+    /// Links a Kora pet to an identity on an external blockchain network.
+    ///
+    /// # Validation
+    /// * `chain_name` must be 1–32 bytes.
+    /// * `external_address` must be 1–128 bytes.
+    /// * Each `(chain_name, external_address)` pair may only be registered once.
+    /// * Only the current pet owner may call this function.
+    ///
+    /// # Events
+    /// Emits `CrossChainIdentityRegistered` on success.
+    ///
+    /// # Errors
+    /// * `ContractError::InputTooLong`  – a string exceeds its maximum length.
+    /// * `ContractError::InvalidInput`  – an empty string was supplied, or the (chain, address) pair is already registered.
+    /// * `ContractError::NotPetOwner`   – caller is not the pet owner.
+    /// * `ContractError::PetNotFound`   – the pet does not exist.
+    pub fn register_cross_chain_id(
+        env: Env,
+        pet_id: u64,
+        caller: Address,
+        chain_name: String,
+        external_address: String,
+    ) -> bool {
+        caller.require_auth();
+
+        // --- length validation ---
+        if chain_name.len() == 0 || external_address.len() == 0 {
+            panic_with_error!(&env, ContractError::InvalidInput);
+        }
+        if chain_name.len() > Self::MAX_CHAIN_NAME_LEN {
+            panic_with_error!(&env, ContractError::InputTooLong);
+        }
+        if external_address.len() > Self::MAX_EXTERNAL_ADDRESS_LEN {
+            panic_with_error!(&env, ContractError::InputTooLong);
+        }
+
+        // --- ownership check ---
+        let pet: Pet = env
+            .storage()
+            .instance()
+            .get::<DataKey, Pet>(&DataKey::Pet(pet_id))
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::PetNotFound));
+        if pet.owner != caller {
+            panic_with_error!(&env, ContractError::NotPetOwner);
+        }
+
+        // --- duplicate guard: the (chain_name, external_address) pair must be unique ---
+        let lookup_key = CrossChainKey::ChainLookup((chain_name.clone(), external_address.clone()));
+        if env
+            .storage()
+            .instance()
+            .get::<CrossChainKey, u64>(&lookup_key)
+            .is_some()
+        {
+            panic_with_error!(&env, ContractError::InvalidInput); // (chain, address) pair already registered
+        }
+
+        // --- store forward mapping: pet_id → (chain, address) ---
+        env.storage()
+            .instance()
+            .set(&CrossChainKey::KoraMapping((pet_id, chain_name.clone())), &external_address);
+
+        // --- store reverse mapping: (chain, address) → pet_id ---
+        env.storage().instance().set(&lookup_key, &pet_id);
+
+        // --- emit event ---
+        env.events().publish(
+            (String::from_str(&env, "CrossChainIdentityRegistered"), pet_id),
+            CrossChainIdentityRegistered {
+                version: EVENT_SCHEMA_VERSION,
+                pet_id,
+                chain_id: chain_name,
+                external_id: external_address,
+                registered_at: env.ledger().timestamp(),
+            },
+        );
+
+        true
+    }
+
+    /// Resolves an external chain identity back to a Kora pet ID.
+    ///
+    /// Returns `Some(pet_id)` if the `(chain_name, external_address)` pair has
+    /// been registered, or `None` if it is unknown.
+    pub fn resolve_cross_chain(
+        env: Env,
+        chain_name: String,
+        external_address: String,
+    ) -> Option<u64> {
+        env.storage()
+            .instance()
+            .get::<CrossChainKey, u64>(&CrossChainKey::ChainLookup((chain_name, external_address)))
+    }
+
 } // end impl KoraContract
 
 // --- OVERFLOW-SAFE COUNTER HELPER ---
