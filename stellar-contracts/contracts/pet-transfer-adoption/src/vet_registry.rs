@@ -82,7 +82,7 @@ const MAX_LICENSE_LEN: u32 = 50;
 const MAX_SPEC_LEN: u32 = 100;
 
 fn validate_len(env: &Env, s: &String, max: u32) {
-    if s.len() > max {
+    if s.len() == 0 || s.len() > max {
         panic_with_error!(env, ContractError::InputTooLong);
     }
 }
@@ -124,6 +124,7 @@ impl VetRegistryContract {
         if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(env, ContractError::AlreadyInitialized);
         }
+        admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
     }
 

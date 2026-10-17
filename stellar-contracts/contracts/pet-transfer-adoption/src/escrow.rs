@@ -281,6 +281,10 @@ pub fn dispute_transfer(env: &Env, transfer_id: u64, initiator: Address) {
     }
     entry.status = EscrowStatus::Disputed;
     env.storage().persistent().set(&key, &entry);
+    env.events().publish(
+        (soroban_sdk::symbol_short!("FEE_DISP"), transfer_id),
+        (initiator.clone(), entry.amount),
+    );
 }
 
 /// Admin-controlled ruling on a disputed escrow. Only the configured `FeeRecipient`
@@ -289,7 +293,11 @@ pub fn dispute_transfer(env: &Env, transfer_id: u64, initiator: Address) {
 /// escrowed amount between buyer and seller when the dispute is resolved in the
 /// seller's favour (in whole or in part).
 pub fn admin_resolve_dispute(env: &Env, transfer_id: u64, decision: DisputeDecision) {
-    let admin = get_fee_recipient(env).unwrap_or_else(|| panic_with_error!(env, EscrowError::Unauthorized));
+    let admin = env
+        .storage()
+        .instance()
+        .get::<EscrowDataKey, Address>(&EscrowDataKey::Admin)
+        .unwrap_or_else(|| panic_with_error!(env, EscrowError::Unauthorized));
     admin.require_auth();
 
     let key = EscrowDataKey::Entry(transfer_id);
