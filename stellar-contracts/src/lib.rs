@@ -368,6 +368,11 @@ const MIN_GROOMING_SLOT_MINS: u64 = 15;
 /// weeks. `book_grooming_slot` rejects anything longer. (Issue #217)
 const MAX_GROOMING_SLOT_MINS: u64 = 480;
 
+/// Maximum advance booking window for grooming slots, in seconds (90 days).
+/// Bookings made more than 90 days in the future are rejected to prevent
+/// schedule pollution and storage exhaustion. (Issue #283)
+const MAX_ADVANCE_BOOKING_SECS: u64 = 90 * 86_400;
+
 /// Maximum plausible weight for a pet, in grams (500 kg). Rejects both
 /// zero-weight entries and unrealistic values that would corrupt dosage
 /// calculators and weight-history graphs downstream. (Issue #71)
@@ -541,6 +546,7 @@ pub enum ContractError {
     InvalidRecipient = 169,
     PetIsArchived = 170,
     BootstrapNotInitiated = 171,
+    GroomerNotVerified = 172,
 }
 
 // --- MULTI-LANGUAGE ERROR REGISTRY (Issue #684) ---
@@ -11285,7 +11291,7 @@ impl KoraContract {
         let mut priorities = soroban_sdk::Vec::new(env);
 
         for contact in contacts.iter() {
-            if contact.name.is_empty() || contact.phone.is_empty() {
+            if contact.name.is_empty() || (contact.phone.is_empty() && contact.email.is_empty()) {
                 panic_with_error!(env, ContractError::InvalidInput);
             }
             if contact.is_primary {
@@ -13204,7 +13210,13 @@ impl KoraContract {
         // (Issue #217) Only future start times with sane durations may be
         // booked: reject past/now bookings and zero-minute or multi-week
         // holds that would block the groomer's calendar.
-        if start_time <= env.ledger().timestamp() {
+        let now = env.ledger().timestamp();
+        if start_time <= now {
+            panic_with_error!(env, ContractError::InvalidInput);
+        }
+        // (Issue #283) Reject bookings more than 90 days in the future to
+        // prevent schedule pollution and groomer storage exhaustion.
+        if start_time > now.saturating_add(MAX_ADVANCE_BOOKING_SECS) {
             panic_with_error!(env, ContractError::InvalidInput);
         }
         if duration_mins < MIN_GROOMING_SLOT_MINS || duration_mins > MAX_GROOMING_SLOT_MINS {

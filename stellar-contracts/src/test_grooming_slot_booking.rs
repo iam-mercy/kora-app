@@ -166,3 +166,47 @@ fn test_boundary_durations_accepted() {
     let slot_b = client.book_grooming_slot(&groomer, &(NOW + 5000), &480u64, &pet_id, &owner);
     assert_eq!(slot_b, 2);
 }
+
+// -------------------------------------------------------
+// Issue #283: maximum advance booking window (90 days)
+// -------------------------------------------------------
+
+/// A start time 180 days in the future must be rejected with InvalidInput.
+#[test]
+fn test_booking_180_days_in_advance_rejected() {
+    let (env, client, groomer, owner, pet_id) = setup();
+    // 180 days * 86400 s/day = 15_552_000 s
+    let far_future = NOW + 180 * 86_400;
+    let result =
+        client.try_book_grooming_slot(&groomer, &far_future, &60u64, &pet_id, &owner);
+    assert_eq!(
+        result,
+        Err(Ok(invalid_input())),
+        "Booking 180 days ahead must be rejected"
+    );
+}
+
+/// A start time exactly at the 90-day boundary must be accepted.
+#[test]
+fn test_booking_at_90_day_boundary_accepted() {
+    let (env, client, groomer, owner, pet_id) = setup();
+    // Exactly 90 days from now (within the window)
+    let boundary = NOW + 90 * 86_400;
+    let slot_id =
+        client.book_grooming_slot(&groomer, &boundary, &60u64, &pet_id, &owner);
+    assert!(slot_id > 0, "Booking at the 90-day boundary should succeed");
+}
+
+/// A start time one second past the 90-day limit must be rejected.
+#[test]
+fn test_booking_one_second_past_90_day_limit_rejected() {
+    let (env, client, groomer, owner, pet_id) = setup();
+    let just_over = NOW + 90 * 86_400 + 1;
+    let result =
+        client.try_book_grooming_slot(&groomer, &just_over, &60u64, &pet_id, &owner);
+    assert_eq!(
+        result,
+        Err(Ok(invalid_input())),
+        "Booking one second past the 90-day limit must be rejected"
+    );
+}

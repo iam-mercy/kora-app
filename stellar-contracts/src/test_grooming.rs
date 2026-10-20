@@ -1260,4 +1260,106 @@ mod test_cancel_grooming_schedule_auth {
         let result = client.cancel_grooming_schedule(&schedule_id);
         assert!(result);
     }
+
+    // -------------------------------------------------------
+    // Issue #285: rate_groomer rejects out-of-range scores
+    // -------------------------------------------------------
+
+    /// score = 0 must be rejected (below the 1–5 range).
+    #[test]
+    #[should_panic]
+    fn test_rate_groomer_score_zero_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.budget().reset_unlimited();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        let owner = Address::generate(&env);
+        let pet_id = client.register_pet(
+            &owner,
+            &String::from_str(&env, "Fluffy"),
+            &String::from_str(&env, "2020-01-01"),
+            &Gender::Female,
+            &Species::Cat,
+            &String::from_str(&env, "Persian"),
+            &String::from_str(&env, "White"),
+            &10u32,
+            &None,
+            &PrivacyLevel::Public,
+        );
+
+        // score = 0 is below the valid 1–5 range — must panic with InvalidRating
+        client.rate_groomer(&pet_id, &1u64, &0u32);
+    }
+
+    /// score = 6 must be rejected (above the 1–5 range).
+    #[test]
+    #[should_panic]
+    fn test_rate_groomer_score_six_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.budget().reset_unlimited();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        let owner = Address::generate(&env);
+        let pet_id = client.register_pet(
+            &owner,
+            &String::from_str(&env, "Fluffy"),
+            &String::from_str(&env, "2020-01-01"),
+            &Gender::Female,
+            &Species::Cat,
+            &String::from_str(&env, "Persian"),
+            &String::from_str(&env, "White"),
+            &10u32,
+            &None,
+            &PrivacyLevel::Public,
+        );
+
+        // score = 6 is above the valid 1–5 range — must panic with InvalidRating
+        client.rate_groomer(&pet_id, &1u64, &6u32);
+    }
+
+    /// Scores 1 through 5 must be accepted (boundary validation).
+    #[test]
+    fn test_rate_groomer_valid_scores_accepted() {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.budget().reset_unlimited();
+        let contract_id = env.register_contract(None, KoraContract);
+        let client = KoraContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init_admin(&admin);
+
+        for score in 1u32..=5u32 {
+            let owner = Address::generate(&env);
+            let pet_id = client.register_pet(
+                &owner,
+                &String::from_str(&env, "Fluffy"),
+                &String::from_str(&env, "2020-01-01"),
+                &Gender::Female,
+                &Species::Cat,
+                &String::from_str(&env, "Persian"),
+                &String::from_str(&env, "White"),
+                &10u32,
+                &None,
+                &PrivacyLevel::Public,
+            );
+            // record_id 999 does not exist → returns false but must NOT panic on score
+            let result = client.rate_groomer(&pet_id, &999u64, &score);
+            assert!(
+                !result,
+                "rate_groomer should return false for missing record (score {})",
+                score
+            );
+        }
+    }
 }

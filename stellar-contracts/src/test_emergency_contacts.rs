@@ -258,8 +258,8 @@ fn test_contact_with_empty_name_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_contact_with_empty_phone_rejected() {
+fn test_contact_with_email_only_accepted() {
+    // Issue #282: phone OR email is sufficient — empty phone with valid email must pass.
     let env = Env::default();
     let mut contacts = soroban_sdk::Vec::new(&env);
     contacts.push_back(valid_contact(
@@ -267,6 +267,26 @@ fn test_contact_with_empty_phone_rejected() {
         "Primary Contact",
         "",
         "primary@example.com",
+        "Owner",
+        true,
+        1,
+    ));
+
+    // Should NOT panic — email is present, so the contact is reachable.
+    KoraContract::validate_emergency_contacts(&env, &contacts);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #14)")]
+fn test_contact_with_blank_phone_and_email_rejected() {
+    // Issue #282: both phone and email are empty — must be rejected.
+    let env = Env::default();
+    let mut contacts = soroban_sdk::Vec::new(&env);
+    contacts.push_back(valid_contact(
+        &env,
+        "Primary Contact",
+        "",
+        "",
         "Owner",
         true,
         1,
