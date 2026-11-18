@@ -10704,7 +10704,6 @@ impl KoraContract {
             return None;
         }
 
-        let _ = pet_id;
         Some(record.notes.clone())
     }
 

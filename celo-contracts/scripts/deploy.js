@@ -3,8 +3,6 @@ const fs = require("fs");
 const path = require("path");
 
 async function main() {
-  const [deployer] = await hre.ethers.getSigners();
-
   const KoraRegistry = await hre.ethers.getContractFactory("KoraRegistry");
   const registry = await KoraRegistry.deploy();
   await registry.waitForDeployment();
