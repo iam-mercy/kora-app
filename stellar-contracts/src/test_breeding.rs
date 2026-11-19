@@ -178,3 +178,123 @@ fn test_get_lineage_up_to_max_depth_succeeds() {
     let lineage = client.get_lineage(&grandchild, &8);
     assert_eq!(lineage.len(), 4);
 }
+
+#[test]
+fn test_add_breed_metadata_creates_new_entry() {
+    let (env, client, _owner, sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 1u64;
+    client.add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador"),
+        &String::from_str(&env, "Friendly"),
+    );
+
+    let metadata = client.get_breed_metadata(&breed_id);
+    assert_eq!(metadata.name, String::from_str(&env, "Labrador"));
+    assert_eq!(metadata.description, String::from_str(&env, "Friendly"));
+    let _ = sire;
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn test_add_breed_metadata_rejects_existing_id() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 1u64;
+    client.add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador"),
+        &String::from_str(&env, "Friendly"),
+    );
+
+    // Creating again with the same ID must be rejected with a typed error.
+    client.add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Poodle"),
+        &String::from_str(&env, "Curly"),
+    );
+}
+
+#[test]
+fn test_add_breed_metadata_failure_preserves_existing() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 1u64;
+    client.add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador"),
+        &String::from_str(&env, "Friendly"),
+    );
+
+    let result = client.try_add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Poodle"),
+        &String::from_str(&env, "Curly"),
+    );
+    assert!(result.is_err());
+
+    let metadata = client.get_breed_metadata(&breed_id);
+    assert_eq!(metadata.name, String::from_str(&env, "Labrador"));
+    assert_eq!(metadata.description, String::from_str(&env, "Friendly"));
+}
+
+#[test]
+fn test_update_breed_metadata_updates_existing_entry() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 1u64;
+    client.add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador"),
+        &String::from_str(&env, "Friendly"),
+    );
+
+    client.update_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador Retriever"),
+        &String::from_str(&env, "Very friendly"),
+    );
+
+    let metadata = client.get_breed_metadata(&breed_id);
+    assert_eq!(metadata.name, String::from_str(&env, "Labrador Retriever"));
+    assert_eq!(metadata.description, String::from_str(&env, "Very friendly"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #24)")]
+fn test_update_breed_metadata_rejects_unknown_id() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let unknown_id = 999_999u64;
+
+    // Updating an unknown ID must be rejected with a typed error.
+    client.update_breed_metadata(
+        &unknown_id,
+        &String::from_str(&env, "Ghost"),
+        &String::from_str(&env, "Missing"),
+    );
+}
+
+#[test]
+fn test_update_breed_metadata_failure_leaves_metadata_intact() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 1u64;
+    client.add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador"),
+        &String::from_str(&env, "Friendly"),
+    );
+
+    let unknown_id = 999_999u64;
+    let result = client.try_update_breed_metadata(
+        &unknown_id,
+        &String::from_str(&env, "Ghost"),
+        &String::from_str(&env, "Missing"),
+    );
+    assert!(result.is_err());
+
+    // The failed update must not create metadata for the unknown ID.
+    let result = client.try_get_breed_metadata(&unknown_id);
+    assert!(result.is_err());
+
+    // Existing metadata must remain unchanged.
+    let metadata = client.get_breed_metadata(&breed_id);
+    assert_eq!(metadata.name, String::from_str(&env, "Labrador"));
+    assert_eq!(metadata.description, String::from_str(&env, "Friendly"));
+}
