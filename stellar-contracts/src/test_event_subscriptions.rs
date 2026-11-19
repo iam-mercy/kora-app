@@ -201,3 +201,56 @@ fn test_indexed_lookup_100_subscriptions_only_returns_matching_event_type() {
         &String::from_str(&env, "All good"),
     );
 }
+
+/// Issue #316 — a single pet must not accumulate more than 100 subscribers
+/// across all subscribers. The 101st subscription targeting the same pet must
+/// panic with `ContractError::LimitExceeded`.
+#[test]
+#[should_panic]
+fn test_subscription_limit_enforced_per_pet() {
+    let (env, client, admin, _owner, _vet, pet_id) = setup();
+
+    // Raise the per-address cap so the per-pet cap is the limiting factor.
+    client.set_max_subs_per_address(&admin, &200u32);
+
+    let mut event_types = Vec::new(&env);
+    event_types.push_back(EventType::TreatmentAdded);
+    let mut pet_ids = Vec::new(&env);
+    pet_ids.push_back(pet_id);
+
+    // Fill the pet to its 100-subscriber capacity with distinct subscribers.
+    for _ in 0..100u32 {
+        let sub = Address::generate(&env);
+        client.register_subscription(&sub, &event_types, &pet_ids, &9999u64);
+    }
+
+    // The 101st subscriber for the same pet must be rejected.
+    let overflow_sub = Address::generate(&env);
+    client.register_subscription(&overflow_sub, &event_types, &pet_ids, &9999u64);
+}
+
+/// Issue #316 — subscriptions within the per-pet capacity must proceed normally.
+#[test]
+fn test_subscription_within_per_pet_capacity_succeeds() {
+    let (env, client, admin, _owner, _vet, pet_id) = setup();
+
+    client.set_max_subs_per_address(&admin, &200u32);
+
+    let mut event_types = Vec::new(&env);
+    event_types.push_back(EventType::TreatmentAdded);
+    let mut pet_ids = Vec::new(&env);
+    pet_ids.push_back(pet_id);
+
+    for _ in 0..99u32 {
+        let sub = Address::generate(&env);
+        client.register_subscription(&sub, &event_types, &pet_ids, &9999u64);
+    }
+
+    // The 100th subscriber is still within capacity and must succeed.
+    let last_sub = Address::generate(&env);
+    let id = client.register_subscription(&last_sub, &event_types, &pet_ids, &9999u64);
+
+    let matches = client.get_matching_subscription_ids(&EventType::TreatmentAdded, &pet_id);
+    assert_eq!(matches.len(), 100);
+    assert!(matches.contains(id));
+}

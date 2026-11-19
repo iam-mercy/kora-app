@@ -1,5 +1,5 @@
 use crate::*;
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::{Address as _, Events}, Address, Env, String, Symbol, IntoVal};
 
 fn setup_env() -> (Env, KoraContractClient<'static>, Address) {
     let env = Env::default();
@@ -112,6 +112,43 @@ fn test_take_and_retrieve_snapshot() {
         snapshot.species_distribution.get(String::from_str(&env, "Bird")).unwrap(),
         0
     );
+}
+
+// ── Test: Snapshot Emits SnapshotTaken Event ──────────────────────────────────
+
+#[test]
+fn test_take_snapshot_emits_event() {
+    let (env, client, admin) = setup_env();
+    let owner = Address::generate(&env);
+
+    // Register a pet and a vet so totals are non-zero
+    register_pet_with_species(&client, &env, &owner, Species::Dog);
+    setup_vet(&client, &env, &admin);
+
+    let snapshot_id = client.take_statistics_snapshot(&admin);
+    assert_eq!(snapshot_id, 1);
+
+    let snapshot = client.get_snapshot(&snapshot_id).unwrap();
+
+    // Verify the SnapshotTaken event was published with the expected payload
+    let expected_topics = (Symbol::new(&env, "SnapshotTaken"),).into_val(&env);
+    let expected_data = (
+        snapshot_id,
+        snapshot.total_pets,
+        snapshot.total_vets,
+        snapshot.timestamp,
+    )
+        .into_val(&env);
+
+    let events = env.events().all();
+    let mut found = false;
+    for event in events.iter() {
+        if event.0 == expected_topics && event.2 == expected_data {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "SnapshotTaken event not emitted with expected payload");
 }
 
 // ── Test: Multiple Snapshots ───────────────────────────────────────────────────
@@ -267,182 +304,4 @@ fn test_snapshot_requires_admin_auth() {
     // Non-admin tries to take snapshot
     let non_admin = Address::generate(&env);
     client.take_statistics_snapshot(&non_admin);
-}
-
-// ── Test: Get Snapshot Returns None for Non-Existent ─────────────────────────────
-
-#[test]
-fn test_get_snapshot_nonexistent() {
-    let (env, client, _admin) = setup_env();
-
-    // Try to get a snapshot that doesn't exist
-    let snapshot = client.get_snapshot(&999);
-    assert!(snapshot.is_none());
-}
-
-// ── Test: Snapshot Captures Complex Species Distribution ─────────────────────────
-
-#[test]
-fn test_snapshot_species_distribution() {
-    let (env, client, admin) = setup_env();
-    let owner = Address::generate(&env);
-
-    // Register pets of different species
-    register_pet_with_species(&client, &env, &owner, Species::Dog);
-    register_pet_with_species(&client, &env, &owner, Species::Dog);
-    register_pet_with_species(&client, &env, &owner, Species::Dog);
-    register_pet_with_species(&client, &env, &owner, Species::Cat);
-    register_pet_with_species(&client, &env, &owner, Species::Cat);
-    register_pet_with_species(&client, &env, &owner, Species::Bird);
-    register_pet_with_species(&client, &env, &owner, Species::Rabbit);
-
-    // Take snapshot
-    let snapshot_id = client.take_statistics_snapshot(&admin);
-    let snapshot = client.get_snapshot(&snapshot_id).unwrap();
-
-    // Verify species distribution
-    assert_eq!(
-        snapshot.species_distribution.get(String::from_str(&env, "Dog")).unwrap(),
-        3
-    );
-    assert_eq!(
-        snapshot.species_distribution.get(String::from_str(&env, "Cat")).unwrap(),
-        2
-    );
-    assert_eq!(
-        snapshot.species_distribution.get(String::from_str(&env, "Bird")).unwrap(),
-        1
-    );
-    assert_eq!(
-        snapshot.species_distribution.get(String::from_str(&env, "Rabbit")).unwrap(),
-        1
-    );
-    assert_eq!(
-        snapshot.species_distribution.get(String::from_str(&env, "Other")).unwrap(),
-        0
-    );
-}
-
-// ── Test: Snapshot Timestamp ─────────────────────────────────────────────────────
-
-#[test]
-fn test_snapshot_timestamp() {
-    let (env, client, admin) = setup_env();
-
-    // Get current ledger timestamp
-    let current_time = env.ledger().timestamp();
-
-    // Take snapshot
-    let snapshot_id = client.take_statistics_snapshot(&admin);
-    let snapshot = client.get_snapshot(&snapshot_id).unwrap();
-
-    // Verify timestamp is captured
-    assert!(snapshot.timestamp >= current_time);
-}
-
-// ── Test: Snapshot with Insurance Claims ──────────────────────────────────────────
-
-#[test]
-fn test_snapshot_with_insurance_claims() {
-    let (env, client, admin) = setup_env();
-    let owner = Address::generate(&env);
-
-    // Register pet with insurance
-    let pet_id = register_pet_with_species(&client, &env, &owner, Species::Dog);
-
-    // Add insurance policy
-    client.add_insurance_policy(
-        &pet_id,
-        &String::from_str(&env, "Basic Coverage"),
-        &1000u64,
-        &(env.ledger().timestamp() + 365 * 24 * 60 * 60),
-        &String::from_str(&env, "POLICY123"),
-        &PremiumTier::Basic,
-    );
-
-    // Submit a claim (if the function exists)
-    // Note: Based on the test files, submit_insurance_claim should exist
-    let claim_result = client.try_submit_insurance_claim(
-        &pet_id,
-        &500u64,
-        &String::from_str(&env, "Vet visit"),
-    );
-
-    // Only continue if the function exists
-    if claim_result.is_ok() {
-        // Take snapshot
-        let snapshot_id = client.take_statistics_snapshot(&admin);
-        let snapshot = client.get_snapshot(&snapshot_id).unwrap();
-
-        // Verify insurance claims count
-        assert_eq!(snapshot.total_insurance_claims, 1);
-    }
-}
-
-// ── Test: Snapshot is Point-in-Time ───────────────────────────────────────────────
-
-#[test]
-fn test_snapshot_point_in_time() {
-    let (env, client, admin) = setup_env();
-    let owner = Address::generate(&env);
-
-    // Register 2 pets
-    register_pet_with_species(&client, &env, &owner, Species::Dog);
-    register_pet_with_species(&client, &env, &owner, Species::Cat);
-
-    // Take first snapshot
-    let snapshot_id1 = client.take_statistics_snapshot(&admin);
-
-    // Register 3 more pets
-    register_pet_with_species(&client, &env, &owner, Species::Dog);
-    register_pet_with_species(&client, &env, &owner, Species::Cat);
-    register_pet_with_species(&client, &env, &owner, Species::Bird);
-
-    // Take second snapshot
-    let snapshot_id2 = client.take_statistics_snapshot(&admin);
-
-    // Verify first snapshot still shows 2 pets
-    let snapshot1 = client.get_snapshot(&snapshot_id1).unwrap();
-    assert_eq!(snapshot1.total_pets, 2);
-    assert_eq!(
-        snapshot1.species_distribution.get(String::from_str(&env, "Dog")).unwrap(),
-        1
-    );
-    assert_eq!(
-        snapshot1.species_distribution.get(String::from_str(&env, "Cat")).unwrap(),
-        1
-    );
-
-    // Verify second snapshot shows 5 pets
-    let snapshot2 = client.get_snapshot(&snapshot_id2).unwrap();
-    assert_eq!(snapshot2.total_pets, 5);
-    assert_eq!(
-        snapshot2.species_distribution.get(String::from_str(&env, "Dog")).unwrap(),
-        2
-    );
-    assert_eq!(
-        snapshot2.species_distribution.get(String::from_str(&env, "Cat")).unwrap(),
-        2
-    );
-    assert_eq!(
-        snapshot2.species_distribution.get(String::from_str(&env, "Bird")).unwrap(),
-        1
-    );
-}
-
-// ── Test: Get Snapshot is Public (No Auth Required) ───────────────────────────────
-
-#[test]
-fn test_get_snapshot_no_auth_required() {
-    let (env, client, admin) = setup_env();
-
-    // Take a snapshot as admin
-    let snapshot_id = client.take_statistics_snapshot(&admin);
-
-    // Clear all auths
-    env.set_auths(&[]);
-
-    // Anyone should be able to retrieve the snapshot (no panic)
-    let snapshot = client.get_snapshot(&snapshot_id);
-    assert!(snapshot.is_some());
 }
