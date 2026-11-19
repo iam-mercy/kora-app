@@ -56,3 +56,11 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-362 -->
+- #362: Reconcile duplicate arbitration implementations in KoraContract
+
+<!-- handsoff-issue-363 -->
+- #363: Repair nested resolve_dispute declarations
