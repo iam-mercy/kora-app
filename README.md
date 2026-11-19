@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-317 -->
+- #317: Validate non-empty event types vector in register_subscription in KoraContract
