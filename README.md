@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-318 -->
+- #318: Enforce pagination bounds on get_vet_treatment_history in KoraContract
