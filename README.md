@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-388 -->
+- #388: Add client regression coverage for compact_delegations: expired delegation cleanup and permissions
