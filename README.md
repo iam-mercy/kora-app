@@ -61,3 +61,6 @@ MIT
 
 <!-- handsoff-issue-372 -->
 - #372: Use the escrow admin identity for finalize and refund authority
+
+<!-- handsoff-issue-374 -->
+- #374: Make platform fee multiplication safe at i128 amount boundaries
