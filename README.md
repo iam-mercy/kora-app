@@ -56,3 +56,11 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-308 -->
+- #308: Validate message length bounds in update_tag_message in KoraContract
+
+<!-- handsoff-issue-309 -->
+- #309: Require pet owner authorization in deactivate_tag and reactivate_tag in KoraContract
