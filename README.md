@@ -61,3 +61,6 @@ MIT
 
 <!-- handsoff-issue-322 -->
 - #322: Validate start_date and duration bounds in create_grooming_schedule in KoraContract
+
+<!-- handsoff-issue-357 -->
+- #357: Restore top-level Solidity getters displaced into acceptPetTransfer
