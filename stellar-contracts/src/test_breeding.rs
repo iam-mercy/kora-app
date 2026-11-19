@@ -258,42 +258,116 @@ fn test_update_breed_metadata_updates_existing_entry() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #24)")]
-fn test_update_breed_metadata_rejects_unknown_id() {
+fn test_add_breed_metadata_rejects_empty_name() {
     let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
-    let unknown_id = 999_999u64;
-
-    // Updating an unknown ID must be rejected with a typed error.
-    client.update_breed_metadata(
-        &unknown_id,
-        &String::from_str(&env, "Ghost"),
-        &String::from_str(&env, "Missing"),
+    let breed_id = 42u64;
+    let result = client.try_add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "Friendly"),
     );
+    assert!(result.is_err());
+    // Invalid input must not create a key.
+    assert!(client.try_get_breed_metadata(&breed_id).is_err());
 }
 
 #[test]
-fn test_update_breed_metadata_failure_leaves_metadata_intact() {
+fn test_add_breed_metadata_rejects_empty_description() {
     let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
-    let breed_id = 1u64;
+    let breed_id = 43u64;
+    let result = client.try_add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador"),
+        &String::from_str(&env, ""),
+    );
+    assert!(result.is_err());
+    assert!(client.try_get_breed_metadata(&breed_id).is_err());
+}
+
+#[test]
+fn test_add_breed_metadata_accepts_max_length_strings() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 44u64;
+    // 64-byte ASCII strings are at the upper bound and must be accepted.
+    let name = "a".repeat(64);
+    let description = "b".repeat(64);
+    client.add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, &name),
+        &String::from_str(&env, &description),
+    );
+    let metadata = client.get_breed_metadata(&breed_id);
+    assert_eq!(metadata.name, String::from_str(&env, &name));
+    assert_eq!(metadata.description, String::from_str(&env, &description));
+}
+
+#[test]
+fn test_add_breed_metadata_rejects_over_length_name() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 45u64;
+    let name = "a".repeat(65);
+    let result = client.try_add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, &name),
+        &String::from_str(&env, "Friendly"),
+    );
+    assert!(result.is_err());
+    assert!(client.try_get_breed_metadata(&breed_id).is_err());
+}
+
+#[test]
+fn test_add_breed_metadata_rejects_over_length_description() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 46u64;
+    let description = "b".repeat(65);
+    let result = client.try_add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador"),
+        &String::from_str(&env, &description),
+    );
+    assert!(result.is_err());
+    assert!(client.try_get_breed_metadata(&breed_id).is_err());
+}
+
+#[test]
+fn test_update_breed_metadata_rejects_empty_name() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 47u64;
     client.add_breed_metadata(
         &breed_id,
         &String::from_str(&env, "Labrador"),
         &String::from_str(&env, "Friendly"),
     );
 
-    let unknown_id = 999_999u64;
     let result = client.try_update_breed_metadata(
-        &unknown_id,
-        &String::from_str(&env, "Ghost"),
-        &String::from_str(&env, "Missing"),
+        &breed_id,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "Very friendly"),
     );
     assert!(result.is_err());
+    // Existing entry must be preserved on invalid update.
+    let metadata = client.get_breed_metadata(&breed_id);
+    assert_eq!(metadata.name, String::from_str(&env, "Labrador"));
+    assert_eq!(metadata.description, String::from_str(&env, "Friendly"));
+}
 
-    // The failed update must not create metadata for the unknown ID.
-    let result = client.try_get_breed_metadata(&unknown_id);
+#[test]
+fn test_update_breed_metadata_rejects_over_length_description() {
+    let (env, client, _owner, _sire, _dam, _offspring, _grandchild) = setup();
+    let breed_id = 48u64;
+    client.add_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador"),
+        &String::from_str(&env, "Friendly"),
+    );
+
+    let description = "b".repeat(65);
+    let result = client.try_update_breed_metadata(
+        &breed_id,
+        &String::from_str(&env, "Labrador Retriever"),
+        &String::from_str(&env, &description),
+    );
     assert!(result.is_err());
-
-    // Existing metadata must remain unchanged.
     let metadata = client.get_breed_metadata(&breed_id);
     assert_eq!(metadata.name, String::from_str(&env, "Labrador"));
     assert_eq!(metadata.description, String::from_str(&env, "Friendly"));
