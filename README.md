@@ -61,3 +61,6 @@ MIT
 
 <!-- handsoff-issue-397 -->
 - #397: Validate breed metadata lifespan before calculating age fractions
+
+<!-- handsoff-issue-400 -->
+- #400: Bound delegation compaction request size
