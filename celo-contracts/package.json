@@ -11,7 +11,10 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "lint": "solhint 'contracts/**/*.sol'"
+    "lint": "solhint 'contracts/**/*.sol'",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "audit:dev": "npm audit --audit-level=high",
+    "audit": "npm run audit:prod && npm run audit:dev"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
