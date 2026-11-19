@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-397 -->
+- #397: Validate breed metadata lifespan before calculating age fractions
