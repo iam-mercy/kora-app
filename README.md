@@ -56,3 +56,14 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-364 -->
+- #364: Repair the interrupted advance_schedule authorization block
+
+<!-- handsoff-issue-365 -->
+- #365: Honor the source version supplied to migrate_storage
+
+<!-- handsoff-issue-366 -->
+- #366: Compare complete storage version tuples during migrations
