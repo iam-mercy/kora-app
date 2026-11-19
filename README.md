@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-307 -->
+- #307: Emit LabResultAdded and BiomarkerAnomalyDetected events in add_lab_result in KoraContract
