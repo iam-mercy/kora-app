@@ -64,3 +64,6 @@ MIT
 
 <!-- handsoff-issue-390 -->
 - #390: Add client regression coverage for get_storage_version: default storage schema and migration reads
+
+<!-- handsoff-issue-391 -->
+- #391: Add client regression coverage for get_rollback_deadline: rollback deadline lifecycle
