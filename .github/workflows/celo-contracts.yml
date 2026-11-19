@@ -9,6 +9,44 @@ on:
 permissions: read-all
 
 jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: celo-contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: celo-contracts/package-lock.json
+
+      # Audit policy (see celo-contracts/README.md):
+      # - Production dependencies must have no high/critical advisories.
+      # - Development dependencies must have no critical advisories.
+      # - Accepted advisories are listed in celo-contracts/audit-allowlist.json
+      #   with a justification and are filtered out before the gate fails.
+      - name: Audit production dependencies
+        run: |
+          npm audit --omit=dev --audit-level=high --json > audit-prod.json || true
+          node scripts/audit-gate.js audit-prod.json prod
+
+      - name: Audit development dependencies
+        run: |
+          npm audit --audit-level=critical --json > audit-dev.json || true
+          node scripts/audit-gate.js audit-dev.json dev
+
+      - name: Upload audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: celo-audit-reports
+          path: |
+            celo-contracts/audit-prod.json
+            celo-contracts/audit-dev.json
+
   smoke-test:
     runs-on: ubuntu-latest
     defaults:
