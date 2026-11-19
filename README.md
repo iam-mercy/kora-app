@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-377 -->
+- #377: Add client regression coverage for get_subscription: subscription identity and unknown lookup
