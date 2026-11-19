@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
