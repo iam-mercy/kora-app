@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-304 -->
+- #304: Enforce upper bound on test_type and results strings in add_lab_result in KoraContract
