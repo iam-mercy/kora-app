@@ -64,3 +64,6 @@ MIT
 
 <!-- handsoff-issue-365 -->
 - #365: Honor the source version supplied to migrate_storage
+
+<!-- handsoff-issue-366 -->
+- #366: Compare complete storage version tuples during migrations
