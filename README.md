@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-322 -->
+- #322: Validate start_date and duration bounds in create_grooming_schedule in KoraContract
