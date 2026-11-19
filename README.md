@@ -64,3 +64,6 @@ MIT
 
 <!-- handsoff-issue-394 -->
 - #394: Provide bounded cleanup of expired event subscription indexes
+
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions
