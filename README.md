@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-364 -->
+- #364: Repair the interrupted advance_schedule authorization block
