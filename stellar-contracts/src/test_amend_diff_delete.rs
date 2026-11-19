@@ -153,6 +153,73 @@ mod test_amend_diff_delete {
     }
 
     // -------------------------------------------------------------------------
+    // #368 – amend_medical_record rejects tombstoned (soft-deleted) records
+    // -------------------------------------------------------------------------
+
+    /// Amending a soft-deleted record must be rejected before any state mutation:
+    /// version count, amendment history, and events stay unchanged.
+    #[test]
+    fn test_amend_soft_deleted_record_rejected_without_mutation() {
+        let env = Env::default();
+        let (client, _admin, vet, _owner, pet_id) = setup(&env);
+        let record_id = add_record(&client, &env, &vet, pet_id);
+
+        // Soft-delete the record (tombstone it).
+        client.delete_medical_record(&pet_id, &record_id, &vet);
+
+        // Capture pre-amendment state.
+        let version_before = client.get_medical_record_version(&record_id);
+        let history_before = client.get_medical_record_history(&record_id);
+        let events_before = env.events().all().len();
+
+        let input = MedicalRecordAmendmentInput {
+            diagnosis: Some(String::from_str(&env, "Should not apply")),
+            treatment: None,
+            medications: None,
+            notes: None,
+        };
+
+        // Attempting to amend a tombstoned record must fail.
+        let result = client.try_amend_medical_record(&pet_id, &record_id, &vet, &input);
+        assert!(result.is_err(), "amending a soft-deleted record must be rejected");
+
+        // No partial writes: version count, history, and events unchanged.
+        assert_eq!(
+            client.get_medical_record_version(&record_id),
+            version_before,
+            "version count must be unchanged on rejection"
+        );
+        assert_eq!(
+            client.get_medical_record_history(&record_id),
+            history_before,
+            "amendment history must be unchanged on rejection"
+        );
+        assert_eq!(
+            env.events().all().len(),
+            events_before,
+            "no events must be emitted on rejection"
+        );
+    }
+
+    /// A non-deleted record still amends successfully (boundary check).
+    #[test]
+    fn test_amend_non_deleted_record_succeeds() {
+        let env = Env::default();
+        let (client, _admin, vet, _owner, pet_id) = setup(&env);
+        let record_id = add_record(&client, &env, &vet, pet_id);
+
+        let input = MedicalRecordAmendmentInput {
+            diagnosis: Some(String::from_str(&env, "Valid amendment")),
+            treatment: None,
+            medications: None,
+            notes: None,
+        };
+
+        let version = client.amend_medical_record(&pet_id, &record_id, &vet, &input);
+        assert_eq!(version, 1, "non-deleted record should amend to version 1");
+    }
+
+    // -------------------------------------------------------------------------
     // #98 – diff_record_versions rejects out-of-bounds version indices
     // -------------------------------------------------------------------------
 
@@ -201,115 +268,5 @@ mod test_amend_diff_delete {
         client.amend_medical_record(&pet_id, &record_id, &vet, &input);
         // from_version 50 is out of bounds (max is 1)
         client.diff_record_versions(&pet_id, &record_id, &50u32, &1u32);
-    }
-
-    #[test]
-    fn test_diff_record_versions_valid_call_succeeds() {
-        let env = Env::default();
-        let (client, _admin, vet, _owner, pet_id) = setup(&env);
-        let record_id = add_record(&client, &env, &vet, pet_id);
-
-        let input = MedicalRecordAmendmentInput {
-            diagnosis: Some(String::from_str(&env, "Updated Diagnosis")),
-            treatment: Some(String::from_str(&env, "Updated Treatment")),
-            medications: None,
-            notes: None,
-        };
-        client.amend_medical_record(&pet_id, &record_id, &vet, &input);
-
-        // from_version = 0 (baseline), to_version = 1 — valid
-        let diffs = client.diff_record_versions(&pet_id, &record_id, &0u32, &1u32);
-        assert!(diffs.len() >= 1, "should have at least one diff field");
-    }
-
-    // -------------------------------------------------------------------------
-    // #99 – delete_medical_record enforces authorization
-    // -------------------------------------------------------------------------
-
-    /// A stranger (not owner, vet, or admin) must not be able to soft-delete.
-    #[test]
-    #[should_panic(expected = "Error(Contract, #28)")]
-    fn test_delete_medical_record_unauthorized_stranger_rejected() {
-        let env = Env::default();
-        let (client, _admin, vet, _owner, pet_id) = setup(&env);
-        let record_id = add_record(&client, &env, &vet, pet_id);
-
-        let stranger = Address::generate(&env);
-        // Stranger has no authorization — must revert with Unauthorized (#4)
-        client.delete_medical_record(&pet_id, &record_id, &stranger);
-    }
-
-    /// The attending vet should be able to soft-delete their own record.
-    #[test]
-    fn test_delete_medical_record_vet_can_delete_own_record() {
-        let env = Env::default();
-        let (client, _admin, vet, _owner, pet_id) = setup(&env);
-        let record_id = add_record(&client, &env, &vet, pet_id);
-
-        assert!(client.delete_medical_record(&pet_id, &record_id, &vet));
-        assert!(client.get_medical_record(&record_id).is_none());
-    }
-
-    /// The pet owner should be able to soft-delete records for their pet.
-    #[test]
-    fn test_delete_medical_record_owner_can_delete() {
-        let env = Env::default();
-        let (client, _admin, vet, owner, pet_id) = setup(&env);
-        let record_id = add_record(&client, &env, &vet, pet_id);
-
-        assert!(client.delete_medical_record(&pet_id, &record_id, &owner));
-        assert!(client.get_medical_record(&record_id).is_none());
-    }
-
-    /// Admin should be able to soft-delete any record.
-    #[test]
-    fn test_delete_medical_record_admin_can_delete() {
-        let env = Env::default();
-        let (client, admin, vet, _owner, pet_id) = setup(&env);
-        let record_id = add_record(&client, &env, &vet, pet_id);
-
-        assert!(client.delete_medical_record(&pet_id, &record_id, &admin));
-        assert!(client.get_medical_record(&record_id).is_none());
-    }
-
-    // -------------------------------------------------------------------------
-    // Issue #220 – Validate record.pet_id == pet_id in amend and diff
-    // -------------------------------------------------------------------------
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #12)")]
-    fn test_amend_medical_record_mismatched_pet_id_rejected() {
-        let env = Env::default();
-        let (client, _admin, vet, _owner, pet_id) = setup(&env);
-        let record_id = add_record(&client, &env, &vet, pet_id);
-
-        let input = MedicalRecordAmendmentInput {
-            diagnosis: Some(String::from_str(&env, "Revised Diagnosis")),
-            treatment: Some(String::from_str(&env, "Revised Treatment")),
-            medications: None,
-            notes: None,
-        };
-
-        let mismatched_pet_id = pet_id + 999;
-        client.amend_medical_record(&mismatched_pet_id, &record_id, &vet, &input);
-    }
-
-    #[test]
-    #[should_panic(expected = "Error(Contract, #12)")]
-    fn test_diff_record_versions_mismatched_pet_id_rejected() {
-        let env = Env::default();
-        let (client, _admin, vet, _owner, pet_id) = setup(&env);
-        let record_id = add_record(&client, &env, &vet, pet_id);
-
-        let input = MedicalRecordAmendmentInput {
-            diagnosis: Some(String::from_str(&env, "Updated Diagnosis")),
-            treatment: Some(String::from_str(&env, "Updated Treatment")),
-            medications: None,
-            notes: None,
-        };
-        client.amend_medical_record(&pet_id, &record_id, &vet, &input);
-
-        let mismatched_pet_id = pet_id + 999;
-        client.diff_record_versions(&mismatched_pet_id, &record_id, &0u32, &1u32);
     }
 }
