@@ -56,3 +56,14 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-377 -->
+- #377: Add client regression coverage for get_subscription: subscription identity and unknown lookup
+
+<!-- handsoff-issue-378 -->
+- #378: Add client regression coverage for get_stat_series: inclusive time filtering and inverted ranges
+
+<!-- handsoff-issue-380 -->
+- #380: Add client regression coverage for get_pet_full_profile: profile privacy and component assembly
