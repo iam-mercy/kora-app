@@ -64,3 +64,6 @@ MIT
 
 <!-- handsoff-issue-374 -->
 - #374: Make platform fee multiplication safe at i128 amount boundaries
+
+<!-- handsoff-issue-375 -->
+- #375: Make dispute split multiplication safe at i128 amount boundaries
