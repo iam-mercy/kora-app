@@ -56,3 +56,17 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-372 -->
+- #372: Use the escrow admin identity for finalize and refund authority
+
+<!-- handsoff-issue-374 -->
+- #374: Make platform fee multiplication safe at i128 amount boundaries
+
+<!-- handsoff-issue-375 -->
+- #375: Make dispute split multiplication safe at i128 amount boundaries
+
+<!-- handsoff-issue-376 -->
+- #376: Add client regression coverage for max_subscriptions_per_address: default and configured subscription capacity
