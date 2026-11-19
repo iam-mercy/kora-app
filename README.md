@@ -61,3 +61,6 @@ MIT
 
 <!-- handsoff-issue-393 -->
 - #393: Bound historical subscription scans during registration
+
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
