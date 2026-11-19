@@ -67,3 +67,6 @@ MIT
 
 <!-- handsoff-issue-375 -->
 - #375: Make dispute split multiplication safe at i128 amount boundaries
+
+<!-- handsoff-issue-376 -->
+- #376: Add client regression coverage for max_subscriptions_per_address: default and configured subscription capacity
