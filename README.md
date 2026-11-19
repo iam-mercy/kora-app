@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-371 -->
+- #371: Reject already expired dates in verify_vet_with_expiry
