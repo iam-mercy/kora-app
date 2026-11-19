@@ -61,3 +61,6 @@ MIT
 
 <!-- handsoff-issue-377 -->
 - #377: Add client regression coverage for get_subscription: subscription identity and unknown lookup
+
+<!-- handsoff-issue-378 -->
+- #378: Add client regression coverage for get_stat_series: inclusive time filtering and inverted ranges
