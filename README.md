@@ -61,3 +61,6 @@ MIT
 
 <!-- handsoff-issue-304 -->
 - #304: Enforce upper bound on test_type and results strings in add_lab_result in KoraContract
+
+<!-- handsoff-issue-305 -->
+- #305: Validate from_timestamp <= to_timestamp in get_lab_results in KoraContract
