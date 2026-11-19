@@ -56,3 +56,8 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-372 -->
+- #372: Use the escrow admin identity for finalize and refund authority
