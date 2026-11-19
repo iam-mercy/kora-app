@@ -56,3 +56,11 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-318 -->
+- #318: Enforce pagination bounds on get_vet_treatment_history in KoraContract
+
+<!-- handsoff-issue-320 -->
+- #320: Validate breed list length and non-empty strings in set_breed_list in KoraContract
