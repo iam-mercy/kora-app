@@ -186,20 +186,20 @@ fn test_get_behavior_history_paginated_across_pages() {
     }
 
     // First page: offset 0, limit 2 → first 2 records.
-    let page0 = client.get_behavior_history_paginated(&pet_id, &0u64, &2u32);
+    let page0 = client.get_behavior_history_paginated(&pet_id, &owner, &0u64, &2u32);
     assert_eq!(page0.len(), 2);
 
     // Second page: offset 2, limit 2 → next 2 records (distinct from page0).
-    let page1 = client.get_behavior_history_paginated(&pet_id, &2u64, &2u32);
+    let page1 = client.get_behavior_history_paginated(&pet_id, &owner, &2u64, &2u32);
     assert_eq!(page1.len(), 2);
     assert_ne!(page0.get(0).unwrap().id, page1.get(0).unwrap().id);
 
     // Last page: offset 4, limit 2 → only 1 record left.
-    let page2 = client.get_behavior_history_paginated(&pet_id, &4u64, &2u32);
+    let page2 = client.get_behavior_history_paginated(&pet_id, &owner, &4u64, &2u32);
     assert_eq!(page2.len(), 1);
 
     // Past the end: offset 10 → empty, not an error.
-    let page3 = client.get_behavior_history_paginated(&pet_id, &10u64, &2u32);
+    let page3 = client.get_behavior_history_paginated(&pet_id, &owner, &10u64, &2u32);
     assert_eq!(page3.len(), 0);
 
     // Requesting more than 50 is silently capped, not rejected.
@@ -212,7 +212,7 @@ fn test_get_behavior_history_paginated_across_pages() {
             &String::from_str(&env, "Bulk record"),
         );
     }
-    let capped = client.get_behavior_history_paginated(&pet_id, &0u64, &100u32);
+    let capped = client.get_behavior_history_paginated(&pet_id, &owner, &0u64, &100u32);
     assert_eq!(capped.len(), 50);
 }
 
@@ -259,4 +259,40 @@ fn test_add_behavior_record_rejects_non_owner_caller() {
         &3u32,
         &String::from_str(&env, "Not my pet"),
     );
+}
+
+/// Issue #306: get_behavior_history must require authorization from the pet
+/// owner (or an authorized vet). An unrelated caller must be rejected.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_get_behavior_history_rejects_unauthorized_caller() {
+    let (env, client, owner, _admin, pet_id) = setup();
+
+    client.add_behavior_record(
+        &pet_id,
+        &owner,
+        &BehaviorType::Aggression,
+        &3u32,
+        &String::from_str(&env, "Barking"),
+    );
+
+    let stranger = Address::generate(&env);
+    client.get_behavior_history(&pet_id, &stranger);
+}
+
+/// Issue #306: the pet owner may read the full behavior history.
+#[test]
+fn test_get_behavior_history_allows_owner() {
+    let (env, client, owner, _admin, pet_id) = setup();
+
+    client.add_behavior_record(
+        &pet_id,
+        &owner,
+        &BehaviorType::Aggression,
+        &3u32,
+        &String::from_str(&env, "Barking"),
+    );
+
+    let history = client.get_behavior_history(&pet_id, &owner);
+    assert_eq!(history.len(), 1);
 }
