@@ -61,3 +61,6 @@ MIT
 
 <!-- handsoff-issue-388 -->
 - #388: Add client regression coverage for compact_delegations: expired delegation cleanup and permissions
+
+<!-- handsoff-issue-390 -->
+- #390: Add client regression coverage for get_storage_version: default storage schema and migration reads
