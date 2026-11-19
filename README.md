@@ -56,3 +56,11 @@ npx hardhat compile
 ## License
 
 MIT
+
+## Handsoff notes
+
+<!-- handsoff-issue-371 -->
+- #371: Reject already expired dates in verify_vet_with_expiry
+
+<!-- handsoff-issue-373 -->
+- #373: Prevent escrow initialization from changing the token under held balances
