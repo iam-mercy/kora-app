@@ -10,12 +10,14 @@ on:
     paths:
       - docs/error-codes.md
       - scripts/check_error_codes.py
+      - scripts/test_check_error_codes.py
       - stellar-contracts/src/**/*.rs
       - stellar-contracts/contracts/pet-transfer-adoption/src/**/*.rs
   pull_request:
     paths:
       - docs/error-codes.md
       - scripts/check_error_codes.py
+      - scripts/test_check_error_codes.py
       - stellar-contracts/src/**/*.rs
       - stellar-contracts/contracts/pet-transfer-adoption/src/**/*.rs
 
@@ -31,6 +33,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Run the checker fixture suite
+        run: python3 -m unittest scripts/test_check_error_codes.py
 
       - name: Compare the error tables with the contract enums
         run: python3 scripts/check_error_codes.py

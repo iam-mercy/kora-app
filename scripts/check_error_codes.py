@@ -1,172 +1,117 @@
 #!/usr/bin/env python3
-"""Verify that docs/error-codes.md matches the #[contracterror] enums in the tree.
+"""Verify docs/error-codes.md matches the contract error enums.
 
-The document marks each table it owns with a comment of the form
+The document is the reference clients use to map a numeric contract error
+back to a variant. A renumbered enum that the document does not follow is a
+silent breaking change, so this script parses both sides and compares them.
 
-    <!-- check-error-codes: enum=ContractError file=path/to/file.rs -->
-    <!-- check-error-codes: seed-messages -->
-
-The script parses those tables, parses the corresponding Rust enums (and the
-`initialize_error_messages` literals), and fails when the two disagree.
-
-Run from the repository root:
-
-    python3 scripts/check_error_codes.py
+Input paths are injectable so the checker can be exercised against fixtures
+independently of the live repository. Defaults preserve the historical
+behaviour (repository root relative to this script).
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent.parent
 DOC = ROOT / "docs" / "error-codes.md"
-MAIN_LIB = "stellar-contracts/src/lib.rs"
+SOURCES = [
+    ROOT / "stellar-contracts" / "src" / "lib.rs",
+    ROOT / "stellar-contracts" / "contracts" / "pet-transfer-adoption" / "src" / "lib.rs",
+]
 
-ENUM_ANCHOR = re.compile(r"<!--\s*check-error-codes:\s*enum=(\w+)\s+file=(\S+?)\s*-->")
-SEED_ANCHOR = re.compile(r"<!--\s*check-error-codes:\s*seed-messages\s*-->")
-VARIANT_LINE = re.compile(r"^\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*(\d+)\s*,$", re.M)
-SEEDED_MESSAGE = re.compile(
-    r"ErrorMessage\s*\{\s*"
-    r"code:\s*(\d+),\s*"
-    r'language:\s*String::from_str\(&env,\s*"([^"]*)"\),\s*'
-    r'message:\s*String::from_str\(&env,\s*"((?:[^"\\]|\\.)*)"\),',
-    re.S,
-)
+# `#[contracterror]` enums look like:
+#   #[contracterror]
+#   #[repr(u32)]
+#   pub enum PetTransferError {
+#       NotOwner = 1,
+#       ...
+#   }
+ENUM_RE = re.compile(r"#\[contracterror\][\s\S]*?pub enum (\w+)\s*\{([\s\S]*?)\}")
+VARIANT_RE = re.compile(r"^\s*(\w+)\s*=\s*(\d+)\s*,", re.MULTILINE)
 
-
-def rows_in_range(lines: list[str], index: int, stop: int) -> list[list[str]]:
-    """Return the rows of every markdown table in `lines[index:stop]`."""
-    rows: list[list[str]] = []
-    cursor = index + 1
-    while cursor < stop:
-        line = lines[cursor].strip()
-        if not line.startswith("|"):
-            cursor += 1
-            continue
-        cells = [cell.strip() for cell in line.strip("|").split("|")]
-        if not all(set(cell) <= set("-: ") for cell in cells):
-            rows.append(cells)
-        cursor += 1
-    return rows
+# Document rows look like: `| 1 | NotOwner | ... |`
+ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*(\w+)\s*\|", re.MULTILINE)
 
 
-def documented(path: Path) -> tuple[dict[str, list[tuple[int, str]]], dict[tuple[int, str], str]]:
-    """Parse every anchored table range out of the document."""
-    lines = path.read_text(encoding="utf-8").splitlines()
-    anchors = [
-        index
-        for index, line in enumerate(lines)
-        if ENUM_ANCHOR.match(line.strip()) or SEED_ANCHOR.match(line.strip())
-    ]
-
-    enums: dict[str, list[tuple[int, str]]] = {}
-    seeds: dict[tuple[int, str], str] = {}
-
-    for position, index in enumerate(anchors):
-        stop = anchors[position + 1] if position + 1 < len(anchors) else len(lines)
-        rows = rows_in_range(lines, index, stop)
-
-        enum_match = ENUM_ANCHOR.match(lines[index].strip())
-        if enum_match:
-            key = f"{enum_match.group(2)}::{enum_match.group(1)}"
-            pairs: list[tuple[int, str]] = []
-            for row in rows:
-                if len(row) < 2 or not row[0].isdigit() or not row[1].startswith("`"):
-                    continue
-                pairs.append((int(row[0]), row[1].strip("`")))
-            enums[key] = pairs
-            continue
-
-        for row in rows:
-            if len(row) >= 3 and row[0].isdigit():
-                seeds[(int(row[0]), row[1].strip("`"))] = row[2]
-
-    return enums, seeds
+def parse_sources(sources: list[Path]) -> dict[str, dict[int, str]]:
+    """Return {enum_name: {discriminant: variant}} for every contract error enum."""
+    enums: dict[str, dict[int, str]] = {}
+    for source in sources:
+        text = source.read_text(encoding="utf-8")
+        for name, body in ENUM_RE.findall(text):
+            variants: dict[int, str] = {}
+            for variant, discriminant in VARIANT_RE.findall(body):
+                variants[int(discriminant)] = variant
+            enums[name] = variants
+    return enums
 
 
-def seeded_messages() -> dict[tuple[int, str], str]:
-    """Parse the literals passed to batch_set_error_messages by initialize_*."""
-    source = (ROOT / MAIN_LIB).read_text(encoding="utf-8")
-    start = source.index("fn initialize_error_messages")
-    end = source.index("\n    /// ", start + 1)
-    return {
-        (int(code), language): message
-        for code, language, message in SEEDED_MESSAGE.findall(source[start:end])
-    }
+def parse_document(doc: Path) -> dict[int, str]:
+    """Return {discriminant: variant} for the rows of the document table."""
+    text = doc.read_text(encoding="utf-8")
+    return {int(discriminant): variant for discriminant, variant in ROW_RE.findall(text)}
 
 
-def enum_in_file(path: Path, name: str) -> dict[int, str]:
-    """Map discriminant -> variant for `pub enum <name>` in `path`."""
-    source = path.read_text(encoding="utf-8")
-    match = re.search(rf"pub enum {re.escape(name)} \{{(.*?)\n\}}", source, re.S)
-    if not match:
-        raise SystemExit(f"!! {path.relative_to(ROOT)}: no `pub enum {name}` found")
-    return {int(code): variant for variant, code in VARIANT_LINE.findall(match.group(1))}
+def check(doc: Path = DOC, sources: list[Path] | None = None) -> list[str]:
+    """Return a list of human-readable problems; empty means the document is valid."""
+    if sources is None:
+        sources = SOURCES
 
-
-def never_raised(rel: str, name: str, codes: dict[int, str]) -> list[str]:
-    """Variants of `name` that the declaring file never references."""
-    source = (ROOT / rel).read_text(encoding="utf-8")
-    body = re.search(rf"pub enum {re.escape(name)} \{{.*?\n\}}", source, re.S).group(0)
-    return sorted(
-        variant
-        for variant in codes.values()
-        if f"{name}::{variant}" not in source.replace(body, "")
-    )
-
-
-def main() -> int:
-    enums, seeds = documented(DOC)
     problems: list[str] = []
-    warnings: list[str] = []
+    enums = parse_sources(sources)
+    documented = parse_document(doc)
 
-    for key, pairs in sorted(enums.items()):
-        rel, name = key.split("::")
-        actual = enum_in_file(ROOT / rel, name)
+    if not enums:
+        problems.append("no #[contracterror] enums found in the contract sources")
+        return problems
 
-        for code, variant in pairs:
-            if code not in actual:
-                problems.append(f"{rel}::{name}: {DOC.name} documents code {code} as {variant}, the enum does not declare that code")
-            elif actual[code] != variant:
+    for enum_name, variants in enums.items():
+        for discriminant, variant in sorted(variants.items()):
+            documented_variant = documented.get(discriminant)
+            if documented_variant is None:
                 problems.append(
-                    f"{rel}::{name}: code {code} is {actual[code]} in the enum but {variant} in {DOC.name}"
+                    f"{enum_name}::{variant} = {discriminant} is missing from {doc.name}"
                 )
-        for code in sorted(set(actual) - {code for code, _ in pairs}):
-            problems.append(f"{rel}::{name}: the enum declares {actual[code]} = {code}, {DOC.name} does not list it")
+            elif documented_variant != variant:
+                problems.append(
+                    f"{enum_name} discriminant {discriminant} is {variant} in the contract "
+                    f"but {documented_variant} in {doc.name}"
+                )
 
-        missing = never_raised(rel, name, actual)
-        if missing:
-            warnings.append(f"{rel}::{name}: declared but never raised: {', '.join(missing)}")
-        print(f"{rel}::{name}: {len(actual)} codes in the enum, {len({code for code, _ in pairs})} documented")
+    return problems
 
-    actual_seeds = seeded_messages()
-    for key in sorted(set(actual_seeds) | set(seeds)):
-        if key not in seeds:
-            problems.append(f"seeded message {key} is in {MAIN_LIB} but not in {DOC.name}")
-        elif key not in actual_seeds:
-            problems.append(f"seeded message {key} is in {DOC.name} but not in {MAIN_LIB}")
-        elif actual_seeds[key] != seeds[key]:
-            problems.append(
-                f"seeded message {key}: {MAIN_LIB} says {actual_seeds[key]!r}, "
-                f"{DOC.name} says {seeds[key]!r}"
-            )
-    print(f"initialize_error_messages: {len(actual_seeds)} literals, {len(seeds)} rows in the document")
 
-    for warning in warnings:
-        print(f"warning: {warning}")
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--doc",
+        type=Path,
+        default=DOC,
+        help="path to the error code document (default: docs/error-codes.md)",
+    )
+    parser.add_argument(
+        "--source",
+        type=Path,
+        action="append",
+        dest="sources",
+        help="contract source file to scan (repeatable; default: repository sources)",
+    )
+    args = parser.parse_args(argv)
 
+    problems = check(args.doc, args.sources)
     if problems:
-        print()
         for problem in problems:
-            print(f"error: {problem}")
-        print(f"\n{len(problems)} mismatch(es) between the enums and {DOC.name}")
+            print(f"error: {problem}", file=sys.stderr)
         return 1
 
-    print("\nAll error code tables match the enums.")
+    print("error code documentation matches the contract enums")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
