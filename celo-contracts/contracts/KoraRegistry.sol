@@ -507,6 +507,9 @@ contract KoraRegistry is Pausable {
         pets[petId].owner = msg.sender;
         pets[petId].pendingOwner = address(0);
 
+        emit PetTransferAccepted(petId, previousOwner, msg.sender);
+    }
+
     /// @notice Whether `petId` has been registered in the system.
     /// @param petId The pet to query.
     /// @return      True if the pet exists (active or deactivated), false if not registered.
@@ -520,9 +523,6 @@ contract KoraRegistry is Pausable {
     function getPetRecords(uint256 petId) external view returns (MedicalRecord[] memory) {
         require(pets[petId].owner != address(0), "KoraRegistry: pet does not exist");
         return _petRecords[petId];
-    }
-
-        emit PetTransferAccepted(petId, previousOwner, msg.sender);
     }
 
     /// @notice Return record IDs for `petId` whose timestamp falls within [startDate, endDate], bounded by `limit`.
