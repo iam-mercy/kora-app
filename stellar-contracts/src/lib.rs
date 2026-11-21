@@ -512,6 +512,7 @@ pub enum ContractError {
     NotPetOwner = 22,
     PetAlreadyHasLinkedTag = 23,
     PetNotFound = 24,
+    TagAlreadyLinked = 100,
     StorageQuotaExceeded = 25,
     ThresholdNotMet = 26,
     TooManyItems = 27,
@@ -1270,6 +1271,13 @@ pub struct TagReactivatedEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TagStatusChanged {
+    pub tag_id: BytesN<32>,
+    pub is_active: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TagUnlinkedEvent {
     pub tag_id: BytesN<32>,
     pub pet_id: u64,
@@ -1302,6 +1310,8 @@ pub enum DataKey {
     PetCountByOwner(Address),
     SpeciesPetCount(String),
     SpeciesPetIndex((String, u64)),
+    RegisteredSpeciesCount,
+    RegisteredSpecies(u64),
     Vet(Address),
     VetLicense(String),
     VetCount,
@@ -1572,6 +1582,7 @@ pub enum StatsKey {
 pub enum StatSeriesKey {
     Count(String),        // stat key -> number of stored points
     Point((String, u64)), // (stat key, 1-based index) -> StatPoint
+    Head(String),         // stat key -> ring buffer head (oldest slot index)
 }
 
 #[contracttype]
@@ -3912,7 +3923,7 @@ impl KoraContract {
     }
 
     /// Appends a `StatPoint` for `key`, pruning the oldest entry when the
-    /// series exceeds 365 points.
+    /// series exceeds 365 points using a circular ring buffer (O(1) writes).
     fn record_stat_point(env: &Env, key: String, value: u64) {
         const MAX_POINTS: u64 = 365;
         let count: u64 = env
@@ -3935,21 +3946,18 @@ impl KoraContract {
                 .instance()
                 .set(&StatSeriesKey::Count(key), &new_count);
         } else {
-            // Shift: drop index 1, move 2..=MAX down by one, write at MAX
-            for i in 1..MAX_POINTS {
-                if let Some(p) = env
-                    .storage()
-                    .instance()
-                    .get::<StatSeriesKey, StatPoint>(&StatSeriesKey::Point((key.clone(), i + 1)))
-                {
-                    env.storage()
-                        .instance()
-                        .set(&StatSeriesKey::Point((key.clone(), i)), &p);
-                }
-            }
+            let head: u64 = env
+                .storage()
+                .instance()
+                .get(&StatSeriesKey::Head(key.clone()))
+                .unwrap_or(0);
+            let slot = head % MAX_POINTS;
             env.storage()
                 .instance()
-                .set(&StatSeriesKey::Point((key, MAX_POINTS)), &point);
+                .set(&StatSeriesKey::Point((key.clone(), slot + 1)), &point);
+            env.storage()
+                .instance()
+                .set(&StatSeriesKey::Head(key), &((head + 1) % MAX_POINTS));
         }
     }
 
@@ -3960,16 +3968,23 @@ impl KoraContract {
         if start_ts > end_ts {
             return result;
         }
+        const MAX_POINTS: u64 = 365;
         let count: u64 = env
             .storage()
             .instance()
             .get(&StatSeriesKey::Count(key.clone()))
             .unwrap_or(0);
-        for i in 1..=count {
+        let head: u64 = env
+            .storage()
+            .instance()
+            .get(&StatSeriesKey::Head(key.clone()))
+            .unwrap_or(0);
+        for offset in 0..count {
+            let slot = (head + offset) % MAX_POINTS;
             if let Some(p) = env
                 .storage()
                 .instance()
-                .get::<StatSeriesKey, StatPoint>(&StatSeriesKey::Point((key.clone(), i)))
+                .get::<StatSeriesKey, StatPoint>(&StatSeriesKey::Point((key.clone(), slot + 1)))
             {
                 if p.timestamp >= start_ts && p.timestamp <= end_ts {
                     result.push_back(p);
@@ -4211,22 +4226,28 @@ impl KoraContract {
             .get::<StatsKey, u64>(&StatsKey::ActivePetsCount)
             .unwrap_or(0);
 
-        // Build species distribution map
+        // Build species distribution map from the dynamic registry of registered
+        // species (any species that has ever had a pet), instead of a hardcoded
+        // list that would drop custom species such as Horse, Ferret, or Reptile.
         let mut species_distribution = Map::new(&env);
-        let mut species_list = Vec::new(&env);
-        species_list.push_back(String::from_str(&env, "Dog"));
-        species_list.push_back(String::from_str(&env, "Cat"));
-        species_list.push_back(String::from_str(&env, "Bird"));
-        species_list.push_back(String::from_str(&env, "Rabbit"));
-        species_list.push_back(String::from_str(&env, "Other"));
-
-        for species in species_list.iter() {
-            let count = env
+        let species_registry_count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::RegisteredSpeciesCount)
+            .unwrap_or(0);
+        for i in 0..species_registry_count {
+            if let Some(species) = env
                 .storage()
                 .instance()
-                .get::<DataKey, u64>(&DataKey::SpeciesPetCount(species.clone()))
-                .unwrap_or(0);
-            species_distribution.set(species, count);
+                .get::<DataKey, String>(&DataKey::RegisteredSpecies(i))
+            {
+                let count = env
+                    .storage()
+                    .instance()
+                    .get::<DataKey, u64>(&DataKey::SpeciesPetCount(species.clone()))
+                    .unwrap_or(0);
+                species_distribution.set(species, count);
+            }
         }
 
         // Gather total vets count
@@ -5911,6 +5932,7 @@ impl KoraContract {
             &DataKey::SpeciesPetIndex((species_key, species_count)),
             &pet_id,
         );
+        Self::ensure_species_registered(&env, species_key);
 
         // EMIT EVENT: PetRegistered (we emit the decrypted name for the event log as it's useful,
         // assuming standard privacy. If high strictness needed, this should be masked).
@@ -6030,6 +6052,7 @@ impl KoraContract {
                 &DataKey::SpeciesPetIndex((new_species_key, new_species_count)),
                 &id,
             );
+            Self::ensure_species_registered(&env, new_species_key);
         }
 
         pet.gender = gender;
@@ -9996,14 +10019,18 @@ impl KoraContract {
             created_at: now,
         };
 
-        // If this tag_id was previously linked to a different pet, remove that
-        // stale reverse-mapping so reverse lookups remain 1-to-1.
+        // If this tag_id was previously linked to a different active pet, reject
+        // the link to prevent a single collar tag resolving to conflicting pets.
         if let Some(existing_tag) = env
             .storage()
             .instance()
             .get::<TagKey, PetTag>(&TagKey::Tag(tag_id.clone()))
         {
             if existing_tag.pet_id != pet_id {
+                if existing_tag.is_active {
+                    env.panic_with_error(ContractError::TagAlreadyLinked);
+                }
+                // Remove the stale reverse-mapping so reverse lookups remain 1-to-1.
                 env.storage()
                     .instance()
                     .remove(&TagKey::PetTagId(existing_tag.pet_id));
@@ -10194,6 +10221,13 @@ impl KoraContract {
                     timestamp: env.ledger().timestamp(),
                 },
             );
+            env.events().publish(
+                (String::from_str(&env, "TAG_STATUS_CHANGED"),),
+                TagStatusChanged {
+                    tag_id,
+                    is_active: false,
+                },
+            );
             true
         } else {
             false
@@ -10229,6 +10263,13 @@ impl KoraContract {
                     pet_id: tag.pet_id,
                     reactivated_by: caller,
                     timestamp: env.ledger().timestamp(),
+                },
+            );
+            env.events().publish(
+                (String::from_str(&env, "TAG_STATUS_CHANGED"),),
+                TagStatusChanged {
+                    tag_id,
+                    is_active: true,
                 },
             );
             true
@@ -10408,6 +10449,31 @@ impl KoraContract {
             Species::Bird => String::from_str(env, "Bird"),
             Species::Rabbit => String::from_str(env, "Rabbit"),
         }
+    }
+
+    /// Ensures `species_key` is present in the enumerable registered-species
+    /// registry so `take_statistics_snapshot` can discover it dynamically.
+    fn ensure_species_registered(env: &Env, species_key: String) {
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::RegisteredSpeciesCount)
+            .unwrap_or(0);
+        for i in 0..count {
+            let registered: Option<String> = env
+                .storage()
+                .instance()
+                .get(&DataKey::RegisteredSpecies(i));
+            if registered == Some(species_key.clone()) {
+                return;
+            }
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::RegisteredSpecies(count), &species_key);
+        env.storage()
+            .instance()
+            .set(&DataKey::RegisteredSpeciesCount, &safe_increment(count));
     }
 
     // --- PET PROFILE SCHEMA VALIDATION ---
