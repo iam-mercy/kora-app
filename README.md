@@ -59,14 +59,11 @@ MIT
 
 ## Handsoff notes
 
-<!-- handsoff-issue-372 -->
-- #372: Use the escrow admin identity for finalize and refund authority
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
 
-<!-- handsoff-issue-374 -->
-- #374: Make platform fee multiplication safe at i128 amount boundaries
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
 
-<!-- handsoff-issue-375 -->
-- #375: Make dispute split multiplication safe at i128 amount boundaries
-
-<!-- handsoff-issue-376 -->
-- #376: Add client regression coverage for max_subscriptions_per_address: default and configured subscription capacity
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions
