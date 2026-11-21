@@ -59,8 +59,11 @@ MIT
 
 ## Handsoff notes
 
-<!-- handsoff-issue-308 -->
-- #308: Validate message length bounds in update_tag_message in KoraContract
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
 
-<!-- handsoff-issue-309 -->
-- #309: Require pet owner authorization in deactivate_tag and reactivate_tag in KoraContract
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
+
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions
