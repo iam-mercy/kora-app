@@ -169,6 +169,29 @@ fn test_get_behavior_records_page_size_capped() {
     assert_eq!(page.total, 60);
 }
 
+/// Issue #303: an oversized `page_size` (e.g. 500) must be clamped to 50 so
+/// callers cannot force unbounded slice allocations.
+#[test]
+fn test_get_behavior_records_page_size_500_capped() {
+    let (env, client, owner, _admin, pet_id) = setup();
+
+    for _ in 0..60u32 {
+        client.add_behavior_record(
+            &pet_id,
+            &owner,
+            &BehaviorType::Other,
+            &1,
+            &String::from_str(&env, "Record"),
+        );
+    }
+
+    let page = client.get_behavior_records(&pet_id, &owner, &0u32, &500u32, &None);
+    assert!(page.items.len() <= 50);
+    assert_eq!(page.items.len(), 50);
+    assert_eq!(page.page_size, 50);
+    assert_eq!(page.total, 60);
+}
+
 /// Issue #71: get_behavior_history_paginated must return the correct slice
 /// across multiple pages, and cap `limit` at 50 regardless of what's asked.
 #[test]
@@ -186,20 +209,20 @@ fn test_get_behavior_history_paginated_across_pages() {
     }
 
     // First page: offset 0, limit 2 → first 2 records.
-    let page0 = client.get_behavior_history_paginated(&pet_id, &0u64, &2u32);
+    let page0 = client.get_behavior_history_paginated(&pet_id, &owner, &0u64, &2u32);
     assert_eq!(page0.len(), 2);
 
     // Second page: offset 2, limit 2 → next 2 records (distinct from page0).
-    let page1 = client.get_behavior_history_paginated(&pet_id, &2u64, &2u32);
+    let page1 = client.get_behavior_history_paginated(&pet_id, &owner, &2u64, &2u32);
     assert_eq!(page1.len(), 2);
     assert_ne!(page0.get(0).unwrap().id, page1.get(0).unwrap().id);
 
     // Last page: offset 4, limit 2 → only 1 record left.
-    let page2 = client.get_behavior_history_paginated(&pet_id, &4u64, &2u32);
+    let page2 = client.get_behavior_history_paginated(&pet_id, &owner, &4u64, &2u32);
     assert_eq!(page2.len(), 1);
 
     // Past the end: offset 10 → empty, not an error.
-    let page3 = client.get_behavior_history_paginated(&pet_id, &10u64, &2u32);
+    let page3 = client.get_behavior_history_paginated(&pet_id, &owner, &10u64, &2u32);
     assert_eq!(page3.len(), 0);
 
     // Requesting more than 50 is silently capped, not rejected.
@@ -212,7 +235,7 @@ fn test_get_behavior_history_paginated_across_pages() {
             &String::from_str(&env, "Bulk record"),
         );
     }
-    let capped = client.get_behavior_history_paginated(&pet_id, &0u64, &100u32);
+    let capped = client.get_behavior_history_paginated(&pet_id, &owner, &0u64, &100u32);
     assert_eq!(capped.len(), 50);
 }
 
@@ -259,4 +282,61 @@ fn test_add_behavior_record_rejects_non_owner_caller() {
         &3u32,
         &String::from_str(&env, "Not my pet"),
     );
+}
+
+/// Issue #392: the record's vet may remove a medical record, and retrieval
+/// afterwards must observe the stored tombstone (record no longer active).
+#[test]
+fn test_remove_medical_record_by_vet_persists_tombstone() {
+    let (env, client, owner, _admin, pet_id) = setup();
+    let vet = Address::generate(&env);
+
+    let record_id = client.add_medical_record(
+        &pet_id,
+        &owner,
+        &vet,
+        &String::from_str(&env, "Vaccination"),
+        &String::from_str(&env, "Rabies"),
+        &String::from_str(&env, "2024-01-01"),
+    );
+
+    // The record's vet is authorized to remove it.
+    assert!(client.remove_medical_record(&record_id, &vet));
+
+    // Retrieval observes the tombstone: the record is no longer active.
+    let records = client.get_medical_records(&pet_id, &owner);
+    for i in 0..records.len() {
+        assert_ne!(records.get(i).unwrap().id, record_id);
+    }
+}
+
+/// Issue #392: removing an unknown record ID returns false rather than
+/// panicking or mutating state.
+#[test]
+fn test_remove_medical_record_unknown_id_returns_false() {
+    let (env, client, _owner, _admin, _pet_id) = setup();
+    let vet = Address::generate(&env);
+
+    assert!(!client.remove_medical_record(&999_999u64, &vet));
+}
+
+/// Issue #392: only the record's vet may remove it — an unrelated caller
+/// must be rejected.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_remove_medical_record_rejects_non_vet_caller() {
+    let (env, client, owner, _admin, pet_id) = setup();
+    let vet = Address::generate(&env);
+    let stranger = Address::generate(&env);
+
+    let record_id = client.add_medical_record(
+        &pet_id,
+        &owner,
+        &vet,
+        &String::from_str(&env, "Vaccination"),
+        &String::from_str(&env, "Rabies"),
+        &String::from_str(&env, "2024-01-01"),
+    );
+
+    client.remove_medical_record(&record_id, &stranger);
 }

@@ -2,6 +2,11 @@
 
 `KoraRegistry` is the Solidity contract that backs Kora App on the Celo network.
 
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) 18.x or 20.x (LTS)
+- npm (bundled with Node.js)
+
 ## Setup
 
 ```bash

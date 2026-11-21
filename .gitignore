@@ -11,10 +11,17 @@ test_snapshots/
 **/test_snapshots/
 **/.test_snapshots/
 **/__snapshots__/
-proptest-regressions/
-**/.proptest-regressions/
 *.snap
 *.snap.new
+
+# ── Proptest regression seeds ────────────────────────────────────────────────
+# Ad-hoc/generated regression files stay ignored, but curated seeds under the
+# tracked `proptest-regressions/` directory are committed as regression evidence.
+# See docs/development.md for how to promote a discovered failure.
+**/.proptest-regressions/
+proptest-regressions/**
+!proptest-regressions/
+!proptest-regressions/**
 
 # ── Compiled Wasm artifacts (reproducibly built in CI) ───────────────────────
 *.wasm

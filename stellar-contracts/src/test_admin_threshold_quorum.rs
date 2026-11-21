@@ -78,3 +78,51 @@ fn threshold_change_applies_immediately_with_single_admin() {
     client.set_threshold(&admin1, &1u32);
     assert_eq!(client.get_admin_threshold(), 1u32);
 }
+
+// Regression: `get_quorum_percent` must report the unset/default value before
+// any quorum update has been applied.
+#[test]
+fn get_quorum_percent_returns_unset_value_before_update() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin1, _admin2, _admin3) = setup_multisig(&env, 2);
+
+    assert_eq!(
+        client.get_quorum_percent(),
+        0u32,
+        "quorum percent must be unset before any update"
+    );
+}
+
+// Regression: after an authorized quorum update, `get_quorum_percent` must
+// reflect the new value through the public client.
+#[test]
+fn get_quorum_percent_reflects_authorized_update() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin1, _admin2, _admin3) = setup_multisig(&env, 2);
+
+    client.set_quorum_percent(&admin1, &60u32);
+    assert_eq!(client.get_quorum_percent(), 60u32);
+}
+
+// Boundary: an unauthorized quorum update must fail and leave the previously
+// read value unchanged.
+#[test]
+fn get_quorum_percent_unchanged_after_unauthorized_update() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin1, _admin2, _admin3) = setup_multisig(&env, 2);
+
+    client.set_quorum_percent(&admin1, &60u32);
+    assert_eq!(client.get_quorum_percent(), 60u32);
+
+    let outsider = Address::generate(&env);
+    let result = client.try_set_quorum_percent(&outsider, &90u32);
+    assert!(result.is_err(), "non-admin must not update quorum percent");
+    assert_eq!(
+        client.get_quorum_percent(),
+        60u32,
+        "quorum percent must be unchanged after a rejected update"
+    );
+}

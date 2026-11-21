@@ -59,8 +59,11 @@ MIT
 
 ## Handsoff notes
 
-<!-- handsoff-issue-322 -->
-- #322: Validate start_date and duration bounds in create_grooming_schedule in KoraContract
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
 
-<!-- handsoff-issue-357 -->
-- #357: Restore top-level Solidity getters displaced into acceptPetTransfer
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
+
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions
