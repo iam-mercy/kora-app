@@ -59,11 +59,11 @@ MIT
 
 ## Handsoff notes
 
-<!-- handsoff-issue-388 -->
-- #388: Add client regression coverage for compact_delegations: expired delegation cleanup and permissions
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
 
-<!-- handsoff-issue-390 -->
-- #390: Add client regression coverage for get_storage_version: default storage schema and migration reads
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
 
-<!-- handsoff-issue-391 -->
-- #391: Add client regression coverage for get_rollback_deadline: rollback deadline lifecycle
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions
