@@ -205,28 +205,18 @@ mod test_upgrade_proposal;
 // implemented. Re-enabled here.
 #[cfg(test)]
 mod test_disputes;
-// test_book_slot still requires the appointment-booking API which is not yet
-// implemented; keep it excluded.
-// `test_disputes` and `test_book_slot` do not compile against the current
-// `test_book_slot` calls appointment-booking APIs
-// (`book_slot`, `get_available_slots`, `set_availability`, `cancel_booking`, …)
-// that are not yet implemented. Excluded so the rest of the suite builds.
-// Re-add once the contract-side APIs land.
-// #[cfg(test)]
-// mod test_book_slot;
-// test_disputes is now enabled — the dispute arbitration state machine has been
-// implemented as part of Wave 9 issues #56/#61.
-#[cfg(test)]
-mod test_disputes;
 #[cfg(test)]
 mod test_grooming;
 #[cfg(test)]
 mod test_emergency_notify_rate_limit;
 #[cfg(test)]
 mod test_dispute_validation;
+#[cfg(test)]
 mod test_issues_100_101_102_103;
 #[cfg(test)]
 mod test_issues_198_199_200_201;
+#[cfg(test)]
+mod test_issues_381_382_383_384;
 #[cfg(test)]
 mod test_ownership_history_privacy;
 #[cfg(test)]
@@ -563,6 +553,7 @@ pub struct ErrorMessage {
 pub enum ErrorRegistryKey {
     ErrorMessage((u32, String)), // (error_code, language) -> message
     SupportedLanguages,          // Vec<String> of supported languages
+    LanguageMessageCount(String), // language -> u32 count of registered messages
 }
 
 #[contracttype]
@@ -3614,7 +3605,6 @@ impl KoraContract {
             .unwrap_or(0);
         let mut consents = Vec::new(&env);
         let now = env.ledger().timestamp();
-        let mut expired_count = 0u32;
         for index in 1..=count {
             if let Some(consent_id) = env
                 .storage()
@@ -3627,14 +3617,51 @@ impl KoraContract {
                     .get::<ConsentKey, Consent>(&ConsentKey::Consent(consent_id))
                 {
                     if consent.is_active {
-                        // Filter out expired consents
+                        // Filter out expired consents without emitting events on read paths
                         if let Some(expires_at) = consent.expires_at {
                             if now >= expires_at {
-                                expired_count = expired_count.saturating_add(1);
                                 continue;
                             }
                         }
                         consents.push_back(consent);
+                    }
+                }
+            }
+        }
+        consents
+    }
+
+    /// Explicitly process expired consents for a pet, marking each newly-expired
+    /// active consent inactive and emitting at most one notification per transition.
+    pub fn process_expired_consents(env: Env, pet_id: u64) -> u32 {
+        let count = env
+            .storage()
+            .instance()
+            .get::<ConsentKey, u64>(&ConsentKey::PetConsentCount(pet_id))
+            .unwrap_or(0);
+        let now = env.ledger().timestamp();
+        let mut expired_count = 0u32;
+        for index in 1..=count {
+            if let Some(consent_id) = env
+                .storage()
+                .instance()
+                .get::<ConsentKey, u64>(&ConsentKey::PetConsentIndex((pet_id, index)))
+            {
+                if let Some(mut consent) = env
+                    .storage()
+                    .instance()
+                    .get::<ConsentKey, Consent>(&ConsentKey::Consent(consent_id))
+                {
+                    if consent.is_active {
+                        if let Some(expires_at) = consent.expires_at {
+                            if now >= expires_at {
+                                consent.is_active = false;
+                                env.storage()
+                                    .instance()
+                                    .set(&ConsentKey::Consent(consent_id), &consent);
+                                expired_count = expired_count.saturating_add(1);
+                            }
+                        }
                     }
                 }
             }
@@ -3645,7 +3672,7 @@ impl KoraContract {
                 (pet_id, expired_count),
             );
         }
-        consents
+        expired_count
     }
 
     pub fn get_medical_record(env: Env, record_id: u64) -> Option<MedicalRecord> {
@@ -5297,11 +5324,19 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::InputStringTooLong);
         }
 
+        let msg_key = ErrorRegistryKey::ErrorMessage((error_code, language.clone()));
+        let existed = env.storage().instance().has(&msg_key);
+
         // Store the error message
-        env.storage().instance().set(
-            &ErrorRegistryKey::ErrorMessage((error_code, language.clone())),
-            &message,
-        );
+        env.storage().instance().set(&msg_key, &message);
+
+        if !existed {
+            let count_key = ErrorRegistryKey::LanguageMessageCount(language.clone());
+            let prev_count: u32 = env.storage().instance().get(&count_key).unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&count_key, &prev_count.saturating_add(1));
+        }
 
         // Add language to supported languages if not already present
         let mut supported_langs: Vec<String> = env
@@ -5357,11 +5392,19 @@ impl KoraContract {
                 panic_with_error!(&env, ContractError::InputStringTooLong);
             }
 
+            let msg_key = ErrorRegistryKey::ErrorMessage((msg.code, msg.language.clone()));
+            let existed = env.storage().instance().has(&msg_key);
+
             // Store the error message
-            env.storage().instance().set(
-                &ErrorRegistryKey::ErrorMessage((msg.code, msg.language.clone())),
-                &msg.message,
-            );
+            env.storage().instance().set(&msg_key, &msg.message);
+
+            if !existed {
+                let count_key = ErrorRegistryKey::LanguageMessageCount(msg.language.clone());
+                let prev_count: u32 = env.storage().instance().get(&count_key).unwrap_or(0);
+                env.storage()
+                    .instance()
+                    .set(&count_key, &prev_count.saturating_add(1));
+            }
 
             // Add language to supported languages if not already present
             let mut supported_langs: Vec<String> = env
@@ -5470,12 +5513,34 @@ impl KoraContract {
     pub fn remove_error_message(env: Env, admin: Address, error_code: u32, language: String) {
         Self::require_admin_auth(&env, &admin);
 
-        env.storage()
-            .instance()
-            .remove(&ErrorRegistryKey::ErrorMessage((
-                error_code,
-                language.clone(),
-            )));
+        let msg_key = ErrorRegistryKey::ErrorMessage((error_code, language.clone()));
+        let existed = env.storage().instance().has(&msg_key);
+        env.storage().instance().remove(&msg_key);
+
+        if existed {
+            let count_key = ErrorRegistryKey::LanguageMessageCount(language.clone());
+            let prev_count: u32 = env.storage().instance().get(&count_key).unwrap_or(0);
+            let next_count = prev_count.saturating_sub(1);
+            if next_count > 0 {
+                env.storage().instance().set(&count_key, &next_count);
+            } else {
+                env.storage().instance().remove(&count_key);
+                let supported_langs: Vec<String> = env
+                    .storage()
+                    .instance()
+                    .get(&ErrorRegistryKey::SupportedLanguages)
+                    .unwrap_or_else(|| Vec::new(&env));
+                let mut retained = Vec::new(&env);
+                for lang in supported_langs.iter() {
+                    if lang != language {
+                        retained.push_back(lang);
+                    }
+                }
+                env.storage()
+                    .instance()
+                    .set(&ErrorRegistryKey::SupportedLanguages, &retained);
+            }
+        }
 
         env.events().publish(
             (Symbol::new(&env, "ErrorMessageRemoved"), error_code),
@@ -5863,6 +5928,14 @@ impl KoraContract {
 
         Self::store_pet(&env, pet_id, &pet);
         env.storage().instance().set(&DataKey::PetCount, &pet_id);
+        let total_pets_cache_key = String::from_str(&env, "total_pets");
+        env.storage().instance().set(
+            &SystemKey::StatCache(total_pets_cache_key),
+            &StatCache {
+                value: pet_id as i128,
+                computed_at: timestamp,
+            },
+        );
         if let Some(microchip) = pet.microchip_id.clone() {
             env.storage()
                 .instance()
@@ -6074,9 +6147,16 @@ impl KoraContract {
     pub fn update_pet_privacy_level(env: Env, pet_id: u64, privacy_level: PrivacyLevel) -> bool {
         if let Some(mut pet) = Self::load_pet(&env, pet_id) {
             pet.owner.require_auth();
-            pet.privacy_level = privacy_level;
+            let old_privacy = pet.privacy_level.clone();
+            pet.privacy_level = privacy_level.clone();
             pet.updated_at = env.ledger().timestamp();
             Self::store_pet(&env, pet_id, &pet);
+            if old_privacy != privacy_level {
+                env.events().publish(
+                    (Symbol::new(&env, "PrivacyLevelChanged"), pet_id),
+                    (old_privacy, privacy_level),
+                );
+            }
             true
         } else {
             false
@@ -7754,7 +7834,8 @@ impl KoraContract {
             .get::<DataKey, Vet>(&DataKey::Vet(vet_address.clone()))
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::VetNotFound));
 
-        if !vet.verified {
+        let now = env.ledger().timestamp();
+        if !vet.verified || (vet.license_expiry > 0 && now >= vet.license_expiry) {
             panic_with_error!(&env, ContractError::VeterinarianNotVerified);
         }
 
@@ -9596,8 +9677,7 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::InvalidInput);
         }
 
-        // Issue #296: validate ingredient count (must have 1–20 items).
-        if ingredients.is_empty() || ingredients.len() > 20u32 {
+        // Issue #296: validate ingredient count (must have 1–20 items) and name length.
         if name.len() > Self::MAX_NUTRITION_TEXT_LEN
             || ingredients.is_empty()
             || ingredients.len() > Self::MAX_NUTRITION_INGREDIENTS
@@ -9614,21 +9694,25 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::InvalidInput);
         }
 
-        Self::increment_pet_storage(&env, pet_id);
-
         let plan_count: u64 = env
             .storage()
             .instance()
             .get(&NutritionKey::NutritionPlanCount)
             .unwrap_or(0u64);
-        let plan_id = safe_increment(plan_count);
+        let plan_id = plan_count
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::CounterOverflow));
 
         let pet_plan_count: u64 = env
             .storage()
             .instance()
             .get(&NutritionKey::PetNutritionPlanCount(pet_id))
             .unwrap_or(0u64);
-        let next_pet_count = pet_plan_count.saturating_add(1);
+        let next_pet_count = pet_plan_count
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::CounterOverflow));
+
+        Self::increment_pet_storage(&env, pet_id);
 
         let plan = NutritionPlan {
             id: plan_id,
@@ -9692,7 +9776,9 @@ impl KoraContract {
             .instance()
             .get(&NutritionKey::PetNutritionVersionCount(pet_id))
             .unwrap_or(0);
-        let new_version = current_version + 1;
+        let new_version = current_version
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::CounterOverflow));
         let now = env.ledger().timestamp();
 
         let nutrition_version = NutritionVersion {
@@ -9838,7 +9924,9 @@ impl KoraContract {
             .unwrap_or_else(|| env.panic_with_error(ContractError::InvalidInput));
 
         // Create new version with target's data
-        let new_version = current_version + 1;
+        let new_version = current_version
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::CounterOverflow));
         let now = env.ledger().timestamp();
 
         let rollback_version = NutritionVersion {
@@ -11908,6 +11996,7 @@ impl KoraContract {
         // #292: Prevent self-disputes — claimer and target must be distinct.
         if claimer == target {
             panic_with_error!(&env, ContractError::InvalidInput);
+        }
         let pet = env
             .storage()
             .instance()
@@ -11970,8 +12059,6 @@ impl KoraContract {
     /// Requires the dispute to be in `DisputeStatus::UnderReview`; panics with
     /// `ContractError::InvalidState` otherwise to prevent re-resolving closed
     /// or cancelled disputes (issue #294).
-    pub fn resolve_dispute(env: Env, dispute_id: u64, status: DisputeStatus) -> bool {
-        Self::require_admin(&env);
     pub fn resolve_dispute(env: Env, dispute_id: u64, arbitrator: Address, status: DisputeStatus) -> bool {
         arbitrator.require_auth();
 
@@ -12030,8 +12117,6 @@ impl KoraContract {
             dispute.status == DisputeStatus::Pending
                 || dispute.status == DisputeStatus::Open
                 || dispute.status == DisputeStatus::EvidencePhase,
-                || dispute.status == DisputeStatus::EvidencePhase
-                || dispute.status == DisputeStatus::Open,
             "Dispute is not open for voting"
         );
 
@@ -12188,12 +12273,6 @@ impl KoraContract {
         let cid_len = cid.len();
         if cid_len < MIN_CID_LEN || cid_len > MAX_CID_LEN {
             panic_with_error!(&env, ContractError::InvalidInput);
-        if let Err(e) = Self::validate_len("cid", &cid, Self::MAX_EVIDENCE_URI_LEN) {
-            panic_with_error!(&env, e);
-        }
-
-        if !Self::is_valid_cid(&cid) {
-            env.panic_with_error(ContractError::InvalidInput);
         }
 
         let dispute_key = DisputeKey::Dispute(dispute_id);
@@ -12204,9 +12283,6 @@ impl KoraContract {
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
 
         assert!(
-            dispute.status == DisputeStatus::Open
-                || dispute.status == DisputeStatus::EvidencePhase,
-            "Submission outside evidence phase rejected"
             submitter == dispute.claimer || submitter == dispute.target,
             "Only claimer or target can submit evidence"
         );
@@ -12321,42 +12397,6 @@ impl KoraContract {
         true
     }
 
-    /// Register an arbitrator that can be selected for dispute resolution.
-    /// Only admins can register arbitrators. (Issue #61 dependency)
-    pub fn register_arbitrator(env: Env, admin: Address, arbitrator: Address) {
-        Self::require_admin_auth(&env, &admin);
-
-        let mut list: Vec<Address> = env
-            .storage()
-            .instance()
-            .get(&DisputeKey::ArbitratorList)
-            .unwrap_or_else(|| Vec::new(&env));
-
-        if !list.contains(&arbitrator) {
-            list.push_back(arbitrator.clone());
-            env.storage()
-                .instance()
-                .set(&DisputeKey::ArbitratorList, &list);
-        }
-
-        // Initialize stats if not present
-        if env
-            .storage()
-            .instance()
-            .get::<DisputeKey, ArbitratorStats>(&DisputeKey::ArbitratorStats(arbitrator.clone()))
-            .is_none()
-        {
-            env.storage().instance().set(
-                &DisputeKey::ArbitratorStats(arbitrator.clone()),
-                &ArbitratorStats {
-                    address: arbitrator,
-                    reputation: 0,
-                    total_rulings: 0,
-                },
-            );
-        }
-    }
-
     /// Penalise an arbitrator by decrementing their reputation score.
     pub fn penalise_arbitrator(env: Env, admin: Address, arbitrator: Address) {
         Self::require_admin_auth(&env, &admin);
@@ -12441,7 +12481,6 @@ impl KoraContract {
     pub fn start_review(env: Env, dispute_id: u64, arbitrator: Address) -> bool {
         arbitrator.require_auth();
 
-        // Validate that caller is an authorized arbitrator
         let is_assigned = env
             .storage()
             .instance()
@@ -12510,11 +12549,10 @@ impl KoraContract {
             DisputeOutcome::Cancelled => DisputeStatus::Cancelled,
         };
 
-        dispute.status = final_status;
+        dispute.status = final_status.clone();
         dispute.resolved_at = Some(env.ledger().timestamp());
         env.storage().instance().set(&key, &dispute);
 
-        // Update arbitrator stats
         let mut stats: ArbitratorStats = env
             .storage()
             .instance()
@@ -12530,222 +12568,11 @@ impl KoraContract {
             .instance()
             .set(&DisputeKey::ArbitratorStats(arbitrator), &stats);
 
-        // Issue #295: emit EvidenceSubmitted event.
-        env.events().publish(
-            (Symbol::new(&env, "EvidenceSubmitted"),),
-            (dispute_id, submitter.clone(), evidence_id),
-        );
-
-        let _ = cid; // CID stored off-chain; tracked by evidence_id here
-        true
-    }
-
-    /// Transitions a dispute from `EvidencePhase` to `UnderReview`, assigning
-    /// the given arbitrator as the reviewer. Only the currently assigned
-    /// arbitrator may call this (issue #294).
-    pub fn start_review(env: Env, dispute_id: u64, arbitrator: Address) -> bool {
-        arbitrator.require_auth();
-
-        let assigned: Address = env
-            .storage()
-            .instance()
-            .get(&DisputeKey::Arbitrator)
-            .unwrap_or_else(|| env.panic_with_error(ContractError::Unauthorized));
-
-        if arbitrator != assigned {
-            env.panic_with_error(ContractError::Unauthorized);
-        }
-
-        let dispute_key = DisputeKey::Dispute(dispute_id);
-        let mut dispute: Dispute = env
-            .storage()
-            .instance()
-            .get(&dispute_key)
-            .unwrap_or_else(|| env.panic_with_error(ContractError::InvalidInput));
-
-        assert!(
-            dispute.status == DisputeStatus::EvidencePhase,
-            "start_review requires EvidencePhase"
-        );
-
-        dispute.status = DisputeStatus::UnderReview;
-        env.storage().instance().set(&dispute_key, &dispute);
-        true
-    }
-
-    /// Issues a ruling on a dispute that is `UnderReview`. Transitions status
-    /// to `Resolved`, records the resolved timestamp, and emits a
-    /// `DisputeResolved` event. Updates arbitrator reputation (issue #294,
-    /// #295).
-    pub fn rule(env: Env, dispute_id: u64, arbitrator: Address, outcome: DisputeOutcome) -> bool {
-        arbitrator.require_auth();
-
-        let assigned: Address = env
-            .storage()
-            .instance()
-            .get(&DisputeKey::Arbitrator)
-            .unwrap_or_else(|| env.panic_with_error(ContractError::Unauthorized));
-
-        if arbitrator != assigned {
-            env.panic_with_error(ContractError::Unauthorized);
-        }
-
-        let dispute_key = DisputeKey::Dispute(dispute_id);
-        let mut dispute: Dispute = env
-            .storage()
-            .instance()
-            .get(&dispute_key)
-            .unwrap_or_else(|| env.panic_with_error(ContractError::InvalidInput));
-
-        assert!(
-            dispute.status == DisputeStatus::UnderReview,
-            "rule requires UnderReview"
-        );
-
-        dispute.status = DisputeStatus::Resolved;
-        dispute.resolved_at = Some(env.ledger().timestamp());
-        env.storage().instance().set(&dispute_key, &dispute);
-
-        // Update arbitrator reputation.
-        let stats_key = DisputeKey::ArbitratorStats(arbitrator.clone());
-        let mut stats: ArbitratorStats = env
-            .storage()
-            .instance()
-            .get(&stats_key)
-            .unwrap_or(ArbitratorStats {
-                address: arbitrator.clone(),
-                reputation: 0,
-                total_rulings: 0,
-            });
-        stats.reputation = stats.reputation.saturating_add(1);
-        stats.total_rulings = stats.total_rulings.saturating_add(1);
-        env.storage().instance().set(&stats_key, &stats);
-
-        // Issue #295: emit DisputeResolved event.
         env.events().publish(
             (Symbol::new(&env, "DisputeResolved"),),
-            (
-                dispute_id,
-                DisputeStatus::Resolved,
-                env.ledger().timestamp(),
-            ),
+            (dispute_id, final_status, env.ledger().timestamp()),
         );
 
-        let _ = outcome; // outcome captured in Resolved status; reserved for future payout logic
-        true
-    }
-
-    /// Registers an address as an eligible arbitrator. Admin-only.
-    /// Idempotent — re-registering an existing arbitrator is a no-op (issue #294).
-    pub fn register_arbitrator(env: Env, admin: Address, arbitrator: Address) {
-        Self::require_admin_auth(&env, &admin);
-
-        let stats_key = DisputeKey::ArbitratorStats(arbitrator.clone());
-        if !env.storage().instance().has(&stats_key) {
-            env.storage().instance().set(
-                &stats_key,
-                &ArbitratorStats {
-                    address: arbitrator.clone(),
-                    reputation: 0,
-                    total_rulings: 0,
-                },
-            );
-        }
-
-        // Append to global list if not already present.
-        let mut list: Vec<Address> = env
-            .storage()
-            .instance()
-            .get(&DisputeKey::ArbitratorList)
-            .unwrap_or_else(|| Vec::new(&env));
-        let mut already_registered = false;
-        for a in list.iter() {
-            if a == arbitrator {
-                already_registered = true;
-                break;
-            }
-        }
-        if !already_registered {
-            list.push_back(arbitrator);
-            env.storage()
-                .instance()
-                .set(&DisputeKey::ArbitratorList, &list);
-        }
-    }
-
-    /// Decreases an arbitrator's reputation by 1 (floor 0). Admin-only (issue #294).
-    pub fn penalise_arbitrator(env: Env, admin: Address, arbitrator: Address) {
-        Self::require_admin_auth(&env, &admin);
-
-        let stats_key = DisputeKey::ArbitratorStats(arbitrator.clone());
-        let mut stats: ArbitratorStats = env
-            .storage()
-            .instance()
-            .get(&stats_key)
-            .unwrap_or(ArbitratorStats {
-                address: arbitrator.clone(),
-                reputation: 0,
-                total_rulings: 0,
-            });
-        stats.reputation = (stats.reputation - 1).max(0);
-        env.storage().instance().set(&stats_key, &stats);
-    }
-
-    /// Automatically selects the registered arbitrator with the highest
-    /// reputation who is not a party to the dispute (issue #294).
-    pub fn auto_assign_arbitrator(env: Env, dispute_id: u64) -> Address {
-        let dispute: Dispute = env
-            .storage()
-            .instance()
-            .get(&DisputeKey::Dispute(dispute_id))
-            .unwrap_or_else(|| env.panic_with_error(ContractError::InvalidInput));
-
-        let list: Vec<Address> = env
-            .storage()
-            .instance()
-            .get(&DisputeKey::ArbitratorList)
-            .unwrap_or_else(|| Vec::new(&env));
-
-        let mut best: Option<Address> = None;
-        let mut best_rep: i64 = -1;
-
-        for candidate in list.iter() {
-            if candidate == dispute.claimer || candidate == dispute.target {
-                continue;
-            }
-            let stats_key = DisputeKey::ArbitratorStats(candidate.clone());
-            let rep: i64 = env
-                .storage()
-                .instance()
-                .get::<DisputeKey, ArbitratorStats>(&stats_key)
-                .map(|s| s.reputation)
-                .unwrap_or(0);
-            if rep > best_rep {
-                best_rep = rep;
-                best = Some(candidate.clone());
-            }
-        }
-
-        let winner = best.unwrap_or_else(|| env.panic_with_error(ContractError::InvalidState));
-
-        // Assign as the active arbitrator.
-        env.storage()
-            .instance()
-            .set(&DisputeKey::Arbitrator, &winner);
-        winner
-    }
-
-    /// Returns stats for a given arbitrator address (issue #294).
-    pub fn get_arbitrator_stats(env: Env, arbitrator: Address) -> ArbitratorStats {
-        let stats_key = DisputeKey::ArbitratorStats(arbitrator.clone());
-        env.storage()
-            .instance()
-            .get(&stats_key)
-            .unwrap_or(ArbitratorStats {
-                address: arbitrator,
-                reputation: 0,
-                total_rulings: 0,
-            })
         true
     }
 
@@ -12910,8 +12737,7 @@ impl KoraContract {
 
     /// Advance a schedule: generate the next appointment slot after the most recent one.
     /// Returns the new grooming record id, or 0 if schedule is inactive/past end_date.
-    pub fn advance_schedule(env: Env, caller: Address, schedule_id: u64) -> u64 {
-    /// `caller` must be the pet's owner or the schedule's registered groomer. (Issue #69)
+    /// `caller` must be the pet's owner or the schedule's registered groomer. (Issue #69 / #288)
     pub fn advance_schedule(env: Env, caller: Address, schedule_id: u64) -> u64 {
         caller.require_auth();
 
@@ -12921,20 +12747,11 @@ impl KoraContract {
             .get(&GroomingKey::RecurringSchedule(schedule_id))
             .unwrap_or_else(|| panic_with_error!(env, ContractError::InvalidInput));
 
-        // #288: require pet owner or registered groomer authorization
-        caller.require_auth();
         let pet: Pet = env
             .storage()
             .instance()
             .get(&DataKey::Pet(schedule.pet_id))
             .unwrap_or_else(|| panic_with_error!(env, ContractError::PetNotFound));
-        let is_owner = caller == pet.owner;
-        let is_groomer = env
-            .storage()
-            .instance()
-            .has(&GroomingKey::Groomer(caller.clone()));
-        if !is_owner && !is_groomer {
-            panic_with_error!(&env, ContractError::Unauthorized);
 
         // Caller must be either the pet owner, or the registered groomer for
         // this schedule (matched by their on-chain GroomerProfile name, since
