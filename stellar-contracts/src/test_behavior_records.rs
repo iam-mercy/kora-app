@@ -169,6 +169,29 @@ fn test_get_behavior_records_page_size_capped() {
     assert_eq!(page.total, 60);
 }
 
+/// Issue #303: an oversized `page_size` (e.g. 500) must be clamped to 50 so
+/// callers cannot force unbounded slice allocations.
+#[test]
+fn test_get_behavior_records_page_size_500_capped() {
+    let (env, client, owner, _admin, pet_id) = setup();
+
+    for _ in 0..60u32 {
+        client.add_behavior_record(
+            &pet_id,
+            &owner,
+            &BehaviorType::Other,
+            &1,
+            &String::from_str(&env, "Record"),
+        );
+    }
+
+    let page = client.get_behavior_records(&pet_id, &owner, &0u32, &500u32, &None);
+    assert!(page.items.len() <= 50);
+    assert_eq!(page.items.len(), 50);
+    assert_eq!(page.page_size, 50);
+    assert_eq!(page.total, 60);
+}
+
 /// Issue #71: get_behavior_history_paginated must return the correct slice
 /// across multiple pages, and cap `limit` at 50 regardless of what's asked.
 #[test]
