@@ -59,8 +59,11 @@ MIT
 
 ## Handsoff notes
 
-<!-- handsoff-issue-362 -->
-- #362: Reconcile duplicate arbitration implementations in KoraContract
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
 
-<!-- handsoff-issue-363 -->
-- #363: Repair nested resolve_dispute declarations
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
+
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions
