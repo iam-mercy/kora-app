@@ -4,12 +4,21 @@ Thank you for your interest in contributing to Kora App! This guide will help yo
 
 ## Development Setup
 
-### Prerequisites
+The repository contains two independently tested packages:
+
+- `stellar-contracts/` — Soroban smart contracts (Rust)
+- `celo-contracts/` — Celo smart contracts (Solidity / Hardhat)
+
+Pick the package you are working on and follow the matching setup below. You only need the toolchain for the package you touch.
+
+### Stellar (`stellar-contracts/`)
+
+#### Prerequisites
 - Rust (latest stable)
 - Stellar CLI (>= v25.2.0): `cargo install --locked stellar-cli --features opt`
 - `wasm-opt` (binaryen), for size optimization
 
-### Setup
+#### Setup
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/kora-app.git`
 3. Navigate to project: `cd kora-app`
@@ -17,6 +26,20 @@ Thank you for your interest in contributing to Kora App! This guide will help yo
    (soroban-sdk 28 targets `wasm32v1-none` and requires `stellar contract build`;
    a plain `cargo build` for a wasm target now errors)
 5. Run tests: `cargo test`
+
+### Celo (`celo-contracts/`)
+
+#### Prerequisites
+- Node.js (LTS, >= 18)
+- npm (bundled with Node.js)
+
+#### Setup
+1. Fork the repository
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/kora-app.git`
+3. Navigate to project: `cd kora-app/celo-contracts`
+4. Install dependencies: `npm install`
+5. Compile contracts: `npx hardhat compile`
+6. Run tests: `npx hardhat test`
 
 ## Code Style
 
@@ -53,10 +76,29 @@ Thank you for your interest in contributing to Kora App! This guide will help yo
 ## Testing
 
 ### Running Tests
+
+Stellar contracts:
 ```bash
 cd stellar-contracts
 cargo test
 ```
+
+Celo contracts:
+```bash
+cd celo-contracts
+npm install
+npx hardhat compile
+npx hardhat test
+```
+
+### Which Checks Apply to Each Package
+
+| Package | Compile | Test | CI workflow |
+| --- | --- | --- | --- |
+| `stellar-contracts/` | `stellar contract build --optimize=false` | `cargo test` | `.github/workflows/stellar-contracts.yml` |
+| `celo-contracts/` | `npx hardhat compile` | `npx hardhat test` | `.github/workflows/celo-contracts.yml` |
+
+Run the checks for the package(s) you changed before opening a PR. Changes that only touch one package do not require the other package's toolchain.
 
 ### Test Requirements
 - Unit tests for all public functions
