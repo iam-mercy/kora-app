@@ -190,6 +190,8 @@ mod test_insurance_eligibility;
 #[cfg(test)]
 mod test_breeding;
 #[cfg(test)]
+mod test_issue_entrypoint_regressions;
+#[cfg(test)]
 mod test_breeding_genetics;
 #[cfg(test)]
 mod test_pet_birthday_validation;
@@ -3933,6 +3935,59 @@ impl KoraContract {
                         );
                     }
                 }
+            }
+            ProposalAction::RotateSigner((remove_address, add_address)) => {
+                if remove_address == add_address {
+                    panic_with_error!(&env, ContractError::InvalidInput);
+                }
+
+                let admins: Vec<Address> = env
+                    .storage()
+                    .instance()
+                    .get(&SystemKey::Admins)
+                    .unwrap_or_else(|| panic_with_error!(&env, ContractError::NoAdminsConfigured));
+                let mut rotated_admins = Vec::new(&env);
+                let mut removed_signer = false;
+
+                for current_admin in admins.iter() {
+                    if &current_admin == remove_address {
+                        removed_signer = true;
+                        rotated_admins.push_back(add_address.clone());
+                    } else {
+                        if &current_admin == add_address {
+                            panic_with_error!(&env, ContractError::InvalidInput);
+                        }
+                        rotated_admins.push_back(current_admin);
+                    }
+                }
+
+                if !removed_signer {
+                    panic_with_error!(&env, ContractError::InvalidInput);
+                }
+
+                let threshold: u32 = env
+                    .storage()
+                    .instance()
+                    .get(&SystemKey::AdminThreshold)
+                    .unwrap_or(0);
+                if threshold == 0 || threshold > rotated_admins.len() as u32 {
+                    panic_with_error!(&env, ContractError::InvalidThreshold);
+                }
+
+                if env
+                    .storage()
+                    .instance()
+                    .get::<DataKey, Address>(&DataKey::Admin)
+                    .as_ref()
+                    == Some(remove_address)
+                {
+                    env.storage()
+                        .instance()
+                        .set(&DataKey::Admin, add_address);
+                }
+                env.storage()
+                    .instance()
+                    .set(&SystemKey::Admins, &rotated_admins);
             }
             _ => {}
         }
@@ -14134,6 +14189,20 @@ impl KoraContract {
         env.storage()
             .persistent()
             .set(&BreedingKey::BreedingRecord(record_id), &record);
+
+        let offspring_count: u64 = env
+            .storage()
+            .persistent()
+            .get(&BreedingKey::BreedingOffspringCount(record_id))
+            .unwrap_or(0);
+        let offspring_index = safe_increment(offspring_count);
+        env.storage().persistent().set(
+            &BreedingKey::BreedingOffspringIndex((record_id, offspring_index)),
+            &offspring_id,
+        );
+        env.storage()
+            .persistent()
+            .set(&BreedingKey::BreedingOffspringCount(record_id), &offspring_index);
 
         let count = env
             .storage()
