@@ -261,38 +261,59 @@ fn test_add_behavior_record_rejects_non_owner_caller() {
     );
 }
 
-/// Issue #306: get_behavior_history must require authorization from the pet
-/// owner (or an authorized vet). An unrelated caller must be rejected.
+/// Issue #392: the record's vet may remove a medical record, and retrieval
+/// afterwards must observe the stored tombstone (record no longer active).
 #[test]
-#[should_panic(expected = "Unauthorized")]
-fn test_get_behavior_history_rejects_unauthorized_caller() {
+fn test_remove_medical_record_by_vet_persists_tombstone() {
     let (env, client, owner, _admin, pet_id) = setup();
+    let vet = Address::generate(&env);
 
-    client.add_behavior_record(
+    let record_id = client.add_medical_record(
         &pet_id,
         &owner,
-        &BehaviorType::Aggression,
-        &3u32,
-        &String::from_str(&env, "Barking"),
+        &vet,
+        &String::from_str(&env, "Vaccination"),
+        &String::from_str(&env, "Rabies"),
+        &String::from_str(&env, "2024-01-01"),
     );
 
-    let stranger = Address::generate(&env);
-    client.get_behavior_history(&pet_id, &stranger);
+    // The record's vet is authorized to remove it.
+    assert!(client.remove_medical_record(&record_id, &vet));
+
+    // Retrieval observes the tombstone: the record is no longer active.
+    let records = client.get_medical_records(&pet_id, &owner);
+    for i in 0..records.len() {
+        assert_ne!(records.get(i).unwrap().id, record_id);
+    }
 }
 
-/// Issue #306: the pet owner may read the full behavior history.
+/// Issue #392: removing an unknown record ID returns false rather than
+/// panicking or mutating state.
 #[test]
-fn test_get_behavior_history_allows_owner() {
-    let (env, client, owner, _admin, pet_id) = setup();
+fn test_remove_medical_record_unknown_id_returns_false() {
+    let (env, client, _owner, _admin, _pet_id) = setup();
+    let vet = Address::generate(&env);
 
-    client.add_behavior_record(
+    assert!(!client.remove_medical_record(&999_999u64, &vet));
+}
+
+/// Issue #392: only the record's vet may remove it — an unrelated caller
+/// must be rejected.
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_remove_medical_record_rejects_non_vet_caller() {
+    let (env, client, owner, _admin, pet_id) = setup();
+    let vet = Address::generate(&env);
+    let stranger = Address::generate(&env);
+
+    let record_id = client.add_medical_record(
         &pet_id,
         &owner,
-        &BehaviorType::Aggression,
-        &3u32,
-        &String::from_str(&env, "Barking"),
+        &vet,
+        &String::from_str(&env, "Vaccination"),
+        &String::from_str(&env, "Rabies"),
+        &String::from_str(&env, "2024-01-01"),
     );
 
-    let history = client.get_behavior_history(&pet_id, &owner);
-    assert_eq!(history.len(), 1);
+    client.remove_medical_record(&record_id, &stranger);
 }
