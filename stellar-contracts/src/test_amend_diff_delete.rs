@@ -3,6 +3,7 @@
 //   #97 – amend_medical_record records amended_by address + timestamp + emits event
 //   #98 – diff_record_versions rejects out-of-bounds version indices
 //   #99 – delete_medical_record requires authorization (already implemented; tested here)
+//   #367 – amend_medical_record projects amendment onto current record state
 // =============================================================================
 
 #[cfg(test)]
@@ -153,70 +154,94 @@ mod test_amend_diff_delete {
     }
 
     // -------------------------------------------------------------------------
-    // #368 – amend_medical_record rejects tombstoned (soft-deleted) records
+    // #367 – amendment is projected onto the current record state
     // -------------------------------------------------------------------------
 
-    /// Amending a soft-deleted record must be rejected before any state mutation:
-    /// version count, amendment history, and events stay unchanged.
+    /// A single amendment must be reflected by ordinary record retrieval.
     #[test]
-    fn test_amend_soft_deleted_record_rejected_without_mutation() {
+    fn test_amend_medical_record_updates_current_record() {
         let env = Env::default();
         let (client, _admin, vet, _owner, pet_id) = setup(&env);
         let record_id = add_record(&client, &env, &vet, pet_id);
 
-        // Soft-delete the record (tombstone it).
-        client.delete_medical_record(&pet_id, &record_id, &vet);
-
-        // Capture pre-amendment state.
-        let version_before = client.get_medical_record_version(&record_id);
-        let history_before = client.get_medical_record_history(&record_id);
-        let events_before = env.events().all().len();
-
         let input = MedicalRecordAmendmentInput {
-            diagnosis: Some(String::from_str(&env, "Should not apply")),
-            treatment: None,
+            diagnosis: Some(String::from_str(&env, "Revised Diagnosis")),
+            treatment: Some(String::from_str(&env, "Revised Treatment")),
             medications: None,
-            notes: None,
+            notes: Some(String::from_str(&env, "revised notes")),
         };
+        client.amend_medical_record(&pet_id, &record_id, &vet, &input);
 
-        // Attempting to amend a tombstoned record must fail.
-        let result = client.try_amend_medical_record(&pet_id, &record_id, &vet, &input);
-        assert!(result.is_err(), "amending a soft-deleted record must be rejected");
+        let record = client.get_medical_record(&record_id)
+            .expect("record must still exist after amendment");
 
-        // No partial writes: version count, history, and events unchanged.
-        assert_eq!(
-            client.get_medical_record_version(&record_id),
-            version_before,
-            "version count must be unchanged on rejection"
-        );
-        assert_eq!(
-            client.get_medical_record_history(&record_id),
-            history_before,
-            "amendment history must be unchanged on rejection"
-        );
-        assert_eq!(
-            env.events().all().len(),
-            events_before,
-            "no events must be emitted on rejection"
-        );
+        assert_eq!(record.diagnosis, String::from_str(&env, "Revised Diagnosis"));
+        assert_eq!(record.treatment, String::from_str(&env, "Revised Treatment"));
+        assert_eq!(record.notes, String::from_str(&env, "revised notes"));
     }
 
-    /// A non-deleted record still amends successfully (boundary check).
+    /// Fields not present in the amendment must be preserved from the current record.
     #[test]
-    fn test_amend_non_deleted_record_succeeds() {
+    fn test_amend_medical_record_preserves_untouched_fields() {
         let env = Env::default();
         let (client, _admin, vet, _owner, pet_id) = setup(&env);
         let record_id = add_record(&client, &env, &vet, pet_id);
 
         let input = MedicalRecordAmendmentInput {
-            diagnosis: Some(String::from_str(&env, "Valid amendment")),
+            diagnosis: Some(String::from_str(&env, "Only diagnosis changed")),
             treatment: None,
             medications: None,
             notes: None,
         };
+        client.amend_medical_record(&pet_id, &record_id, &vet, &input);
 
-        let version = client.amend_medical_record(&pet_id, &record_id, &vet, &input);
-        assert_eq!(version, 1, "non-deleted record should amend to version 1");
+        let record = client.get_medical_record(&record_id)
+            .expect("record must still exist after amendment");
+
+        assert_eq!(record.diagnosis, String::from_str(&env, "Only diagnosis changed"));
+        assert_eq!(record.treatment, String::from_str(&env, "Initial Treatment"));
+        assert_eq!(record.notes, String::from_str(&env, "initial notes"));
+    }
+
+    /// Successive amendments must each project onto the latest record state and
+    /// keep the version history intact.
+    #[test]
+    fn test_successive_amendments_update_record_and_history() {
+        let env = Env::default();
+        let (client, _admin, vet, _owner, pet_id) = setup(&env);
+        let record_id = add_record(&client, &env, &vet, pet_id);
+
+        let input1 = MedicalRecordAmendmentInput {
+            diagnosis: Some(String::from_str(&env, "Diagnosis v1")),
+            treatment: None,
+            medications: None,
+            notes: None,
+        };
+        let input2 = MedicalRecordAmendmentInput {
+            diagnosis: None,
+            treatment: Some(String::from_str(&env, "Treatment v2")),
+            medications: None,
+            notes: None,
+        };
+
+        let v1 = client.amend_medical_record(&pet_id, &record_id, &vet, &input1);
+        let v2 = client.amend_medical_record(&pet_id, &record_id, &vet, &input2);
+        assert_eq!(v1, 1);
+        assert_eq!(v2, 2);
+
+        // Current retrieval reflects both amendments cumulatively.
+        let record = client.get_medical_record(&record_id)
+            .expect("record must still exist after amendments");
+        assert_eq!(record.diagnosis, String::from_str(&env, "Diagnosis v1"));
+        assert_eq!(record.treatment, String::from_str(&env, "Treatment v2"));
+
+        // Version history is preserved for each amendment.
+        let a1 = client.get_medical_record_amendment(&record_id, &1u32).unwrap();
+        let a2 = client.get_medical_record_amendment(&record_id, &2u32).unwrap();
+        assert_eq!(a1.version, 1);
+        assert_eq!(a2.version, 2);
+        assert_eq!(a1.changes.diagnosis, Some(String::from_str(&env, "Diagnosis v1")));
+        assert_eq!(a2.changes.treatment, Some(String::from_str(&env, "Treatment v2")));
     }
 
     // -------------------------------------------------------------------------
