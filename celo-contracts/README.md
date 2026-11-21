@@ -35,6 +35,45 @@ CELOSCAN_API_KEY=your_celoscan_api_key
 npx hardhat test
 ```
 
+## Dependency audit policy
+
+CI runs `npm audit` against the committed `package-lock.json` in a dedicated
+`audit` job (see `.github/workflows/celo-contracts.yml`). The gate is
+reproducible: it audits the lockfile, not a fresh resolution.
+
+### Severity thresholds
+
+| Dependency scope | Command | Fails on |
+|------------------|---------|----------|
+| Production       | `npm audit --omit=dev --audit-level=high` | any `high` or `critical` advisory |
+| Development      | `npm audit --audit-level=critical`       | any `critical` advisory |
+
+Production advisories are held to a stricter bar because they ship in the
+deployed contract tooling; development-only advisories (Hardhat, test
+harnesses) only block on `critical`.
+
+Run the same checks locally:
+
+```bash
+npm audit --omit=dev --audit-level=high
+npm audit --audit-level=critical
+```
+
+### Accepted advisories
+
+Advisories that cannot be fixed immediately must be explicitly accepted, never
+silently ignored. To accept an advisory:
+
+1. Add an entry to `audit-allowlist.json` in this directory with the advisory
+   `id`, the affected `package`, a `justification`, and an `expires` date
+   (`YYYY-MM-DD`).
+2. Reference the tracking issue in the `justification`.
+3. The audit job fails if an allowlisted advisory has passed its `expires`
+   date, so accepted risk is re-reviewed on a bounded schedule.
+
+Allowlist entries are reviewed on expiry; remove the entry once the dependency
+is upgraded or the advisory is withdrawn.
+
 ## Scripts
 
 ### `scripts/deploy.js`
