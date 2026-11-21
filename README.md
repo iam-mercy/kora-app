@@ -59,8 +59,11 @@ MIT
 
 ## Handsoff notes
 
-<!-- handsoff-issue-318 -->
-- #318: Enforce pagination bounds on get_vet_treatment_history in KoraContract
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
 
-<!-- handsoff-issue-320 -->
-- #320: Validate breed list length and non-empty strings in set_breed_list in KoraContract
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
+
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions
