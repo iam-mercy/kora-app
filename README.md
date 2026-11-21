@@ -59,11 +59,11 @@ MIT
 
 ## Handsoff notes
 
-<!-- handsoff-issue-377 -->
-- #377: Add client regression coverage for get_subscription: subscription identity and unknown lookup
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
 
-<!-- handsoff-issue-378 -->
-- #378: Add client regression coverage for get_stat_series: inclusive time filtering and inverted ranges
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
 
-<!-- handsoff-issue-380 -->
-- #380: Add client regression coverage for get_pet_full_profile: profile privacy and component assembly
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions

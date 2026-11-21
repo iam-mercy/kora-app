@@ -52,6 +52,33 @@ npx hardhat test
 
 - The repo contains a Rust Soroban crate and a separate Hardhat/Solidity project; build and test them separately.
 
+## Proptest regression seeds
+
+Proptest writes minimized failing inputs to `proptest-regressions/` next to the
+crate that ran the test. Those files are generated artifacts, so the default
+ignore rules keep them out of version control. To preserve a discovered failure
+as tracked regression evidence, promote it into the curated location:
+
+1. Reproduce the failure locally with `cargo test` and confirm the minimized
+   seed file appears under `proptest-regressions/` (for example
+   `stellar-contracts/proptest-regressions/<test>.txt`).
+2. Copy the seed file into the tracked curated directory, preserving the
+   relative path used by the test:
+
+   ```bash
+   mkdir -p proptest-regressions/curated
+   cp stellar-contracts/proptest-regressions/<test>.txt \
+      proptest-regressions/curated/<test>.txt
+   ```
+
+3. Commit the curated seed together with the fix or the regression test that
+   exercises it. Only files under `proptest-regressions/curated/` are tracked;
+   ad-hoc and generated regression files elsewhere remain ignored.
+
+Curated seeds are reviewed like any other test fixture: keep them minimal, name
+them after the test they belong to, and remove them once the underlying case is
+covered by an explicit unit test.
+
 ## Contract initialization
 
 Set `CONTRACT_ID` and use valid Soroban address arguments. The address that
