@@ -46,6 +46,17 @@ fn add_record(client: &KoraContractClient<'_>, env: &Env, vet: &Address, pet_id:
     );
 }
 
+fn add_vaccination(client: &KoraContractClient<'_>, env: &Env, vet: &Address, pet_id: u64) {
+    client.add_vaccination(
+        &pet_id,
+        vet,
+        &String::from_str(env, "Rabies"),
+        &String::from_str(env, "2024-01-01"),
+        &String::from_str(env, "2025-01-01"),
+        &String::from_str(env, "BATCH-1"),
+    );
+}
+
 #[test]
 fn test_first_page() {
     let env = Env::default();
@@ -106,4 +117,33 @@ fn test_page_size_exceeds_cap() {
     let (client, _admin, vet, _pet_id) = setup(&env);
 
     client.get_vet_treatment_history(&vet, &0, &51);
+}
+
+#[test]
+fn test_vaccination_history_caps_limit_at_50() {
+    let env = Env::default();
+    let (client, _admin, vet, pet_id) = setup(&env);
+
+    for _ in 0..60 {
+        add_vaccination(&client, &env, &vet, pet_id);
+    }
+
+    let history = client.get_vet_vaccination_history(&vet, &0, &100_000);
+    assert_eq!(history.len(), 50);
+}
+
+#[test]
+fn test_vaccination_history_offset_pagination() {
+    let env = Env::default();
+    let (client, _admin, vet, pet_id) = setup(&env);
+
+    for _ in 0..60 {
+        add_vaccination(&client, &env, &vet, pet_id);
+    }
+
+    let first = client.get_vet_vaccination_history(&vet, &0, &50);
+    assert_eq!(first.len(), 50);
+
+    let second = client.get_vet_vaccination_history(&vet, &50, &50);
+    assert_eq!(second.len(), 10);
 }

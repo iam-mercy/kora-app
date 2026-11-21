@@ -59,11 +59,11 @@ MIT
 
 ## Handsoff notes
 
-<!-- handsoff-issue-364 -->
-- #364: Repair the interrupted advance_schedule authorization block
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
 
-<!-- handsoff-issue-365 -->
-- #365: Honor the source version supplied to migrate_storage
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
 
-<!-- handsoff-issue-366 -->
-- #366: Compare complete storage version tuples during migrations
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions
