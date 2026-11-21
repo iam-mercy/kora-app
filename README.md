@@ -59,8 +59,11 @@ MIT
 
 ## Handsoff notes
 
-<!-- handsoff-issue-371 -->
-- #371: Reject already expired dates in verify_vet_with_expiry
+<!-- handsoff-issue-393 -->
+- #393: Bound historical subscription scans during registration
 
-<!-- handsoff-issue-373 -->
-- #373: Prevent escrow initialization from changing the token under held balances
+<!-- handsoff-issue-394 -->
+- #394: Provide bounded cleanup of expired event subscription indexes
+
+<!-- handsoff-issue-395 -->
+- #395: Cap event type and pet ID collections in subscriptions
