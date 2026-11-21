@@ -39,18 +39,21 @@ The following functions are guaranteed to have no side effects. They do not writ
 | `get_pet_medical_records` | Returns paginated medical records for a pet |
 | `search_medical_records` | Returns filtered medical records |
 | `get_attachments` | Returns attachments for a record (Malicious hidden from non-admins) |
-| `get_attachment_by_index` | Returns a single attachment by index |
 | `get_attachment_count` | Returns attachment count for a record |
-| `verify_attachment` | Verifies content hash of an attachment |
 | `is_owner_registered` | Returns whether an owner address is registered |
-| `get_pet_count_by_owner` | Returns pet count for an owner |
-| `get_pets_by_owner` | Returns paginated pets for an owner |
-| `get_pets_by_species` | Returns paginated pets by species |
-| `is_custody_valid` | Returns whether temporary custody is active |
-| `get_custody_history` | Returns custody history for a pet |
 | `get_access_logs` | Returns access logs for a pet (owner/admin only) |
+| `take_statistics_snapshot` | Captures and returns a statistics snapshot (counts, totals) |
+| `export_access_log` | Exports the access log for a pet (owner/admin only) |
 
 > **Audit note:** All `log_access` (storage write) calls were removed from the above functions. Write functions (`add_medical_record`, `update_pet_profile`, `grant_access`, `revoke_access`, `add_attachment`, etc.) retain their access log writes.
+
+## Grooming, Nutrition, and Rating Functions
+
+| Function | Description |
+|---|---|
+| `book_grooming_slot` | Books a grooming appointment slot for a pet |
+| `rate_groomer` | Records a rating for a groomer after a completed appointment |
+| `set_nutrition_version` | Sets the nutrition plan version for a pet |
 
 ## Medical record retrieval authorization
 
@@ -204,51 +207,6 @@ if let Some(health) = summary {
 
 ### Performance Benefits
 
-**Without Batch Operations:**
-```rust
-// 5 separate contract calls
-let profile = client.get_pet(&pet_id, &caller);
-let owner = client.get_pet_owner(&pet_id);
-let consents = client.get_active_consents(&pet_id);
-let records = client.get_pet_medical_records(&pet_id, &0, &1);
-let vaccinations = client.get_vaccination_history(&pet_id, &0, &1);
-```
+**Without Batch Operation
 
-**With Batch Operations:**
-```rust
-// 1 contract call
-let batch = client.get_pet_full_profile_batch(&pet_id, &caller);
-```
-
-**Benefits:**
-- Reduced network latency (fewer round trips)
-- Lower transaction costs
-- Atomic data consistency (all data from same ledger state)
-- Simplified client code
-
-### Access Control Enforcement
-
-Both batch operations enforce the same access control rules as individual read operations:
-
-1. **Pet existence check**: Returns `None` if pet doesn't exist
-2. **Privacy level check**: Enforces Public/Restricted/Private rules
-3. **Access grant validation**: Checks for valid access grants on Restricted pets
-4. **Owner verification**: Allows owner full access regardless of privacy level
-
-If access is denied, the functions return `None` rather than panicking, allowing graceful handling in client applications.
-
-### Data Freshness
-
-Batch operations return the **most recent** data based on timestamps:
-- **Latest medical record**: Highest `recorded_at` timestamp
-- **Latest vaccination**: Highest `administered_at` timestamp
-- **Latest lab result**: Highest `test_date` timestamp
-- **Active insurance**: Most recent active policy (highest index)
-
-### Error Handling
-
-Batch operations return `Option<T>` rather than panicking:
-- `Some(data)` - Access granted, data retrieved
-- `None` - Pet doesn't exist OR access denied
-
-This design allows clients to handle missing data and access denial uniformly.
+/* … truncated 1749 chars — edit only what you need near the top … */
