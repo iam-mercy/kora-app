@@ -1350,5 +1350,32 @@ describe("KoraRegistry", function () {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Issue #451 — Transfer proposal replacement must invalidate the prior recipient
+  // ---------------------------------------------------------------------------
+  describe("#451 — initiatePetTransfer replacement invalidates prior recipient", function () {
+    it("rejects the first proposed recipient and only accepts the second after replacement", async function () {
+      const petId = await registerPet(owner);
+
+      // First proposal to `other`.
+      await registry.connect(owner).initiatePetTransfer(petId, other.address);
+
+      // Replace the proposal with a new recipient before the first one accepts.
+      await registry.connect(owner).initiatePetTransfer(petId, vet.address);
+
+      // The first recipient must no longer be able to accept.
+      await expect(
+        registry.connect(other).acceptPetTransfer(petId)
+      ).to.be.revertedWith("KoraRegistry: not pending owner");
+
+      // The second (current) recipient succeeds.
+      await expect(registry.connect(vet).acceptPetTransfer(petId)).to.not.be.reverted;
+
+      const pet = await registry.pets(petId);
+      expect(pet.owner).to.equal(vet.address);
+      expect(pet.pendingOwner).to.equal(ethers.ZeroAddress);
+    });
+  });
+
 });
 
