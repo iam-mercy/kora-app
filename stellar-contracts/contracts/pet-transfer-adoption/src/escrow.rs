@@ -872,6 +872,42 @@ mod tests {
         });
     }
 
+    /// Dust conservation: across a range of small escrow amounts, split ratios, and
+    /// fee rates (all exercising integer-division rounding), the total paid out to
+    /// buyer, seller, and platform must always exactly equal the escrowed amount.
+    #[test]
+    fn admin_resolve_dispute_split_conserves_dust_across_small_amounts() {
+        let amounts: [i128; 7] = [1, 3, 7, 11, 13, 99, 1_000_003];
+        let seller_bps_variants: [u32; 5] = [1, 3333, 5000, 6667, 9999];
+        let fee_bps_variants: [u32; 4] = [0, 1, 250, 9999];
+
+        let mut transfer_id: u64 = 10_000;
+        for &amount in amounts.iter() {
+            for &seller_bps in seller_bps_variants.iter() {
+                for &fee_bps in fee_bps_variants.iter() {
+                    let c = setup();
+                    let buyer_before = c.balance(&c.buyer);
+                    c.run(|| {
+                        init_escrow_config(&c.env, fee_bps, c.platform.clone(), c.token.clone());
+                        deposit_fee(&c.env, transfer_id, c.buyer.clone(), c.seller.clone(), amount);
+                        dispute_transfer(&c.env, transfer_id, c.buyer.clone());
+                        admin_resolve_dispute(&c.env, transfer_id, DisputeDecision::Split(seller_bps));
+                    });
+                    let seller_got = c.balance(&c.seller);
+                    let platform_got = c.balance(&c.platform);
+                    let buyer_got = buyer_before - c.balance(&c.buyer);
+                    assert_eq!(
+                        seller_got + platform_got + buyer_got,
+                        amount,
+                        "dust lost for amount={amount} seller_bps={seller_bps} fee_bps={fee_bps}"
+                    );
+                    assert_eq!(c.balance(&c.contract), 0);
+                    transfer_id += 1;
+                }
+            }
+        }
+    }
+
     // ── Issue #235: finalize_transfer caller authorization ────────────────────
 
     /// A third party cannot finalize an escrow — Unauthorized.
