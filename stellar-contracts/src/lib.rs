@@ -378,6 +378,13 @@ const MAX_BEHAVIOR_DESCRIPTION_LEN: u32 = 500;
 /// call. (Issue #301)
 const MAX_WEIGHT_HISTORY_PAGE_SIZE: u32 = 50;
 
+/// Maximum byte length of an insurance policy ID. (Issue #459)
+const MAX_INSURANCE_POLICY_ID_LEN: u32 = 64;
+/// Maximum byte length of an insurance provider name. (Issue #459)
+const MAX_INSURANCE_PROVIDER_LEN: u32 = 100;
+/// Maximum byte length of an insurance coverage type string. (Issue #459)
+const MAX_INSURANCE_COVERAGE_TYPE_LEN: u32 = 50;
+
 /// Maximum allowed drift, in seconds, between a caller-supplied feeding
 /// timestamp and the current ledger time. A small allowance (5 minutes)
 /// accommodates minor clock skew between a client and the ledger, while
@@ -3316,7 +3323,14 @@ impl KoraContract {
             None => return false,
         };
         pet.owner.require_auth();
-        if policy_id.is_empty() || expiry_date < env.ledger().timestamp() {
+        if policy_id.is_empty()
+            || policy_id.len() > MAX_INSURANCE_POLICY_ID_LEN
+            || provider.is_empty()
+            || provider.len() > MAX_INSURANCE_PROVIDER_LEN
+            || coverage_type.is_empty()
+            || coverage_type.len() > MAX_INSURANCE_COVERAGE_TYPE_LEN
+            || expiry_date < env.ledger().timestamp()
+        {
             return false;
         }
         let count = env
