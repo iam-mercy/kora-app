@@ -528,6 +528,30 @@ mod tests {
         assert_eq!(c.balance(&c.contract), 0);
     }
 
+    /// Settlement must use the fee rate snapshotted at deposit time, even after the
+    /// fee recipient and rate are rotated, while paying the fee to the currently
+    /// configured recipient.
+    #[test]
+    fn finalize_uses_deposit_time_rate_and_current_recipient_after_rotation() {
+        let c = setup();
+        let new_recipient = Address::generate(&c.env);
+        c.run(|| {
+            init_escrow_config(&c.env, 250, c.platform.clone(), c.token.clone());
+            deposit_fee(&c.env, 104, c.buyer.clone(), c.seller.clone(), 10_000_000);
+
+            // Rotate both the fee rate and the recipient after deposit.
+            update_fee_config(&c.env, 500, new_recipient.clone());
+
+            finalize_transfer(&c.env, c.buyer.clone(), 104);
+        });
+        // Fee is computed with the original 250 bps rate (250_000), not the new 500 bps.
+        assert_eq!(c.balance(&c.seller), 9_750_000);
+        // Fee is paid to the newly configured recipient, not the original one.
+        assert_eq!(c.balance(&new_recipient), 250_000);
+        assert_eq!(c.balance(&c.platform), 0);
+        assert_eq!(c.balance(&c.contract), 0);
+    }
+
     /// With a zero fee the seller receives the whole amount and no fee transfer occurs.
     #[test]
     fn finalize_with_zero_fee_pays_full_amount_to_seller() {
