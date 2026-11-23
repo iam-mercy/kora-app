@@ -1,5 +1,6 @@
 const hre = require("hardhat");
 const fs = require("fs");
+const { recordDeployment } = require("./lib/deployment-record");
 const path = require("path");
 
 async function main() {
@@ -16,15 +17,13 @@ async function main() {
     fs.mkdirSync(deploymentsDir, { recursive: true });
   }
 
-  const artifact = {
+  const { recordPath } = recordDeployment(deploymentsDir, {
     address,
     network: hre.network.name,
     timestamp: new Date().toISOString(),
-  };
-
-  const artifactPath = path.join(deploymentsDir, `${hre.network.name}.json`);
-  fs.writeFileSync(artifactPath, JSON.stringify(artifact, null, 2));
-  console.log(`Deployment artifact written to deployments/${hre.network.name}.json`);
+  });
+  console.log(`Deployment record written to ${path.relative(path.join(__dirname, ".."), recordPath)}`);
+  console.log(`Latest pointer updated: deployments/${hre.network.name}.json`);
 
   return address;
 }
