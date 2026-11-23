@@ -8111,20 +8111,18 @@ impl KoraContract {
         expiry_timestamp: u64,
     ) -> bool {
         KoraContract::require_admin_auth(&env, &admin);
-        let verified = if let Some(mut vet) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Vet>(&DataKey::Vet(vet_address))
-        {
-            vet.verified = true;
-            vet.license_expiry = expiry_timestamp;
-            env.storage()
+        // Go through the shared path so the verified-vet index and count stay in sync.
+        let verified = Self::_verify_vet_internal(&env, vet_address.clone());
+        if verified {
+            if let Some(mut vet) = env
+                .storage()
                 .instance()
-                .set(&DataKey::Vet(vet.address.clone()), &vet);
-            true
-        } else {
-            false
-        };
+                .get::<DataKey, Vet>(&DataKey::Vet(vet_address.clone()))
+            {
+                vet.license_expiry = expiry_timestamp;
+                env.storage().instance().set(&DataKey::Vet(vet_address), &vet);
+            }
+        }
         if verified {
             Self::record_admin_activity(&env, &admin, "verify_vet_with_expiry");
         }
