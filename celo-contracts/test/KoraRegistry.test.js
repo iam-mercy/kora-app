@@ -1322,5 +1322,40 @@ describe("KoraRegistry", function () {
       expect(recordsAfter[0].diagnosis).to.equal("diag1");
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Issue #454 — record IDs must remain globally unique across pets
+  // ---------------------------------------------------------------------------
+  describe("#454 — global recordId uniqueness across pets", function () {
+    it("interleaves record creation for two pets and corrects each by its global ID", async function () {
+      const petA = await registerPet(owner);
+      const petB = await registerPet(other);
+
+      const txA1 = await registry.connect(vet).addMedicalRecord(petA, 0, "A-diag1", "treat", "");
+      const idA1 = (await txA1.wait()).logs.find(l => l.fragment?.name === "MedicalRecordAdded").args.recordId;
+
+      const txB1 = await registry.connect(vet).addMedicalRecord(petB, 0, "B-diag1", "treat", "");
+      const idB1 = (await txB1.wait()).logs.find(l => l.fragment?.name === "MedicalRecordAdded").args.recordId;
+
+      const txA2 = await registry.connect(vet).addMedicalRecord(petA, 0, "A-diag2", "treat", "");
+      const idA2 = (await txA2.wait()).logs.find(l => l.fragment?.name === "MedicalRecordAdded").args.recordId;
+
+      // All four interleaved writes share one global counter, so every recordId
+      // across both pets must be distinct even though each pet has its own
+      // per-pet array index starting back at 0.
+      const ids = [idA1, idB1, idA2].map(id => id.toString());
+      expect(new Set(ids).size).to.equal(ids.length);
+
+      // Correcting by the global recordId must only ever touch the record it
+      // names, never the other pet's row at the same per-pet index.
+      await registry.connect(vet).correctMedicalRecord(idB1, "B-fixed", "treat", "");
+
+      const recordsA = await registry.getMedicalRecords(petA);
+      const recordsB = await registry.getMedicalRecords(petB);
+      expect(recordsA[0].diagnosis).to.equal("A-diag1");
+      expect(recordsA[1].diagnosis).to.equal("A-diag2");
+      expect(recordsB[0].diagnosis).to.equal("B-fixed");
+    });
+  });
 });
 
