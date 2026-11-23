@@ -321,6 +321,8 @@ mod test_remove_admin;
 #[cfg(test)]
 mod test_statistics;
 #[cfg(test)]
+mod test_offspring_index_holes;
+#[cfg(test)]
 mod test_statistics_snapshot;
 #[cfg(test)]
 mod test_storage_quota;
