@@ -1377,5 +1377,30 @@ describe("KoraRegistry", function () {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Issue #450 — Page limits must behave safely for maximum uint256 offsets
+  // ---------------------------------------------------------------------------
+  describe("#450 — paginated getters handle maximum uint256 offsets safely", function () {
+    const MAX_UINT256 = (2n ** 256n) - 1n;
+
+    it("getPetsByOwnerPaged returns an empty page instead of reverting with arithmetic panic", async function () {
+      await registerPet(owner);
+      const page = await registry.getPetsByOwnerPaged(owner.address, MAX_UINT256, 10);
+      expect(page.length).to.equal(0);
+    });
+
+    it("getPetRecordsPaged returns an empty page instead of reverting with arithmetic panic", async function () {
+      const petId = await registerPet(owner);
+      await registry.connect(vet).addMedicalRecord(petId, 0, "diag", "treat", "");
+      const page = await registry.getPetRecordsPaged(petId, MAX_UINT256, 10);
+      expect(page.length).to.equal(0);
+    });
+
+    it("getVets returns an empty page instead of reverting with arithmetic panic", async function () {
+      const page = await registry.getVets(MAX_UINT256, 10);
+      expect(page.length).to.equal(0);
+    });
+  });
+
 });
 
