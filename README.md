@@ -67,3 +67,6 @@ MIT
 
 <!-- handsoff-issue-395 -->
 - #395: Cap event type and pet ID collections in subscriptions
+
+<!-- handsoff-issue-369 -->
+- #369: Keep repeated remove_medical_record calls from resetting retention age
