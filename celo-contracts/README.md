@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 18.x or 20.x (LTS)
+- [Node.js](https://nodejs.org/) 20.x (LTS, matches CI; see `.nvmrc` and `engines` in `package.json`)
 - npm (bundled with Node.js)
 
 ## Setup
