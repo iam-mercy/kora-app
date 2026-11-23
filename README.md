@@ -70,3 +70,6 @@ MIT
 
 <!-- handsoff-issue-437 -->
 - #437: Handle absent seed initializer with an actionable diagnostic
+
+<!-- handsoff-issue-438 -->
+- #438: Subscription expiry must free capacity without deleting live matches
