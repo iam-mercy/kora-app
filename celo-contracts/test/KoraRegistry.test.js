@@ -1263,5 +1263,25 @@ describe("KoraRegistry", function () {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Issue #455 — failed registrations must not consume pet IDs
+  // ---------------------------------------------------------------------------
+  describe("#455 — registerPet rejects do not consume IDs", function () {
+    it("keeps petIds sequential and owner index clean across a rejected call", async function () {
+      const petId1 = await registerPet(owner);
+      expect(petId1).to.equal(1n);
+
+      // Invalid registration: empty name must revert without allocating an ID.
+      await expect(
+        registry.connect(owner).registerPet("", PET.species, PET.breed, PET.birthday)
+      ).to.be.revertedWith("KoraRegistry: name required");
+
+      const petId2 = await registerPet(owner);
+      expect(petId2).to.equal(2n);
+
+      const ownerPets = await registry.getPetsByOwner(owner.address);
+      expect(ownerPets.map(id => id.toString())).to.deep.equal(["1", "2"]);
+    });
+  });
 });
 
