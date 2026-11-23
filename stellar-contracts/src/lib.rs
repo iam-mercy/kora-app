@@ -3472,10 +3472,11 @@ impl KoraContract {
             .get::<InsuranceKey, u64>(&InsuranceKey::ClaimCount)
             .unwrap_or(0);
         let claim_id = count.checked_add(1)?;
+        let policy_id = policy.policy_id.clone();
         let claim = InsuranceClaim {
             claim_id,
             pet_id,
-            policy_id: policy.policy_id.clone(),
+            policy_id: policy_id.clone(),
             amount,
             date: now,
             status: InsuranceClaimStatus::Pending,
