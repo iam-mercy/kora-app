@@ -225,11 +225,17 @@ pub fn finalize_transfer(env: &Env, caller: Address, transfer_id: u64) {
     let seller_amount = entry.amount - platform_fee;
     let contract = env.current_contract_address();
     let client = token_client(env);
-    client.transfer(&contract, &entry.seller, &seller_amount);
+    // Resolve the fee recipient and perform the platform-fee transfer BEFORE paying
+    // the seller. The fee recipient is admin-configurable and can be rotated or
+    // otherwise unable to receive funds (e.g. a frozen/unauthorized account); doing
+    // this transfer first ensures that if it fails, no funds have moved at all and
+    // the escrow entry is left untouched in the `Held` state rather than leaving the
+    // seller paid while settlement did not complete. Closes issue #446.
     if platform_fee > 0 {
         let fee_recipient = get_fee_recipient(env).expect("fee recipient not configured");
         client.transfer(&contract, &fee_recipient, &platform_fee);
     }
+    client.transfer(&contract, &entry.seller, &seller_amount);
     entry.status = EscrowStatus::Released;
     env.storage().persistent().set(&key, &entry);
     env.events().publish(
@@ -582,6 +588,64 @@ mod tests {
     }
 
     // ── Issue #1006: missing-entry error-path tests ───────────────────────────
+
+    /// If the platform-fee transfer fails (e.g. the fee recipient's account is
+    /// deauthorized/frozen on the asset's issuer), the whole settlement must roll
+    /// back: the seller must not have been paid, the contract must still hold the
+    /// full escrowed amount, and the escrow entry must remain `Held`.
+    #[test]
+    #[should_panic]
+    fn finalize_transfer_rolls_back_when_platform_transfer_fails() {
+        let c = setup();
+        c.run(|| {
+            init_escrow_config(&c.env, 250, c.platform.clone(), c.token.clone());
+            deposit_fee(&c.env, 999, c.buyer.clone(), c.seller.clone(), 10_000_000);
+        });
+
+        // Deauthorize the fee recipient so the platform-fee transfer fails.
+        StellarAssetClient::new(&c.env, &c.token).set_authorized(&c.platform, &false);
+
+        // This call is expected to panic because the platform-fee transfer fails.
+        c.run(|| {
+            finalize_transfer(&c.env, c.buyer.clone(), 999);
+        });
+    }
+
+    /// Companion check to the panic test above: after a failed settlement, nothing
+    /// must have moved and the entry must still be settleable once the recipient
+    /// is re-authorized.
+    #[test]
+    fn finalize_transfer_state_intact_after_failed_platform_transfer() {
+        let c = setup();
+        c.run(|| {
+            init_escrow_config(&c.env, 250, c.platform.clone(), c.token.clone());
+            deposit_fee(&c.env, 998, c.buyer.clone(), c.seller.clone(), 10_000_000);
+        });
+
+        StellarAssetClient::new(&c.env, &c.token).set_authorized(&c.platform, &false);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            c.run(|| {
+                finalize_transfer(&c.env, c.buyer.clone(), 998);
+            });
+        }));
+        assert!(result.is_err(), "expected finalize_transfer to panic when platform transfer fails");
+
+        // Nothing should have moved: seller unpaid, contract still holds full amount.
+        assert_eq!(c.balance(&c.seller), 0);
+        assert_eq!(c.balance(&c.contract), 10_000_000);
+        c.run(|| {
+            assert_eq!(get_escrow(&c.env, 998).unwrap().status, EscrowStatus::Held);
+        });
+
+        // Re-authorize and confirm settlement now succeeds cleanly.
+        StellarAssetClient::new(&c.env, &c.token).set_authorized(&c.platform, &true);
+        c.run(|| {
+            finalize_transfer(&c.env, c.buyer.clone(), 998);
+        });
+        assert_eq!(c.balance(&c.seller), 9_750_000);
+        assert_eq!(c.balance(&c.platform), 250_000);
+        assert_eq!(c.balance(&c.contract), 0);
+    }
 
     /// finalize_transfer panics with "escrow not found" when no entry exists.
     #[test]
