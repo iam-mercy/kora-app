@@ -378,6 +378,9 @@ const MAX_BEHAVIOR_DESCRIPTION_LEN: u32 = 500;
 /// call. (Issue #301)
 const MAX_WEIGHT_HISTORY_PAGE_SIZE: u32 = 50;
 
+/// Maximum byte length of an insurance claim description. (Issue #460)
+const MAX_INSURANCE_CLAIM_DESCRIPTION_LEN: u32 = 500;
+
 /// Maximum byte length of an insurance policy ID. (Issue #459)
 const MAX_INSURANCE_POLICY_ID_LEN: u32 = 64;
 /// Maximum byte length of an insurance provider name. (Issue #459)
@@ -3470,6 +3473,12 @@ impl KoraContract {
         let now = env.ledger().timestamp();
         if !policy.active || policy.expiry_date < now || amount > policy.coverage_limit {
             return None;
+        }
+        if amount == 0
+            || description.is_empty()
+            || description.len() > MAX_INSURANCE_CLAIM_DESCRIPTION_LEN
+        {
+            env.panic_with_error(ContractError::InvalidInput);
         }
         let fingerprint = InsuranceKey::ClaimByInvoice((
             pet_id,
