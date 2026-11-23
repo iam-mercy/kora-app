@@ -1263,5 +1263,55 @@ describe("KoraRegistry", function () {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Issue #453 — Byte limits must be exercised with multibyte strings
+  // ---------------------------------------------------------------------------
+  describe("#453 — multibyte UTF-8 byte-length enforcement", function () {
+    // "é" is a 2-byte UTF-8 character (U+00E9). Repeating it lets us land
+    // exactly on or just over a byte cap while JS string.length (code units)
+    // disagrees with the UTF-8 byte length that Solidity's bytes().length checks.
+    function multibyteOfByteLength(byteLen) {
+      const pairs = Math.floor(byteLen / 2);
+      const remainder = byteLen % 2;
+      return "é".repeat(pairs) + "a".repeat(remainder);
+    }
+
+    it("accepts a pet short-string field at exactly MAX_SHORT_LEN multibyte bytes", async function () {
+      const exact = multibyteOfByteLength(64); // 32 "é" chars = 64 bytes, 32 JS chars
+      expect(Buffer.byteLength(exact, "utf8")).to.equal(64);
+      await expect(
+        registry.connect(owner).registerPet(exact, PET.species, PET.breed, PET.birthday)
+      ).to.not.be.reverted;
+    });
+
+    it("rejects a pet short-string field one multibyte byte over MAX_SHORT_LEN", async function () {
+      const overBy1 = multibyteOfByteLength(65); // 65 bytes, only 33 JS chars
+      expect(Buffer.byteLength(overBy1, "utf8")).to.equal(65);
+      expect(overBy1.length).to.be.lessThan(65); // proves JS char-length would wrongly pass a naive check
+      await expect(
+        registry.connect(owner).registerPet(overBy1, PET.species, PET.breed, PET.birthday)
+      ).to.be.revertedWith("KoraRegistry: name too long");
+    });
+
+    it("accepts a medical record long-string field at exactly MAX_LONG_LEN multibyte bytes", async function () {
+      const petId = await registerPet();
+      const exact = multibyteOfByteLength(1000); // 500 "é" chars, 500 JS chars
+      expect(Buffer.byteLength(exact, "utf8")).to.equal(1000);
+      await expect(
+        registry.connect(vet).addMedicalRecord(petId, 0, exact, "treat", "")
+      ).to.not.be.reverted;
+    });
+
+    it("rejects a medical record long-string field one multibyte byte over MAX_LONG_LEN", async function () {
+      const petId = await registerPet();
+      const overBy1 = multibyteOfByteLength(1001); // 1001 bytes, 501 JS chars
+      expect(Buffer.byteLength(overBy1, "utf8")).to.equal(1001);
+      expect(overBy1.length).to.be.lessThan(1001);
+      await expect(
+        registry.connect(vet).addMedicalRecord(petId, 0, overBy1, "treat", "")
+      ).to.be.revertedWith("KoraRegistry: diagnosis too long");
+    });
+  });
+
 });
 
