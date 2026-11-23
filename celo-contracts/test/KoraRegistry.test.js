@@ -1313,5 +1313,42 @@ describe("KoraRegistry", function () {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Issue #452 — Accepted transfers must not change medical record provenance
+  // ---------------------------------------------------------------------------
+  describe("#452 — acceptPetTransfer preserves medical record provenance", function () {
+    it("keeps record IDs, timestamps and contents unchanged across a transfer, still queryable", async function () {
+      const petId = await registerPet(owner);
+
+      await registry.connect(vet).addMedicalRecord(petId, 0, "diag1", "treat1", "note1");
+      await registry.connect(vet).addMedicalRecord(petId, 1, "diag2", "treat2", "note2");
+
+      const before = await registry.getPetRecords(petId);
+      expect(before.length).to.equal(2);
+
+      await registry.connect(owner).initiatePetTransfer(petId, other.address);
+      await registry.connect(other).acceptPetTransfer(petId);
+
+      // Ownership changed...
+      const pet = await registry.pets(petId);
+      expect(pet.owner).to.equal(other.address);
+
+      // ...but the medical records themselves are unchanged.
+      const after = await registry.getPetRecords(petId);
+      expect(after.length).to.equal(before.length);
+      for (let i = 0; i < before.length; i++) {
+        expect(after[i].recordId).to.equal(before[i].recordId);
+        expect(after[i].timestamp).to.equal(before[i].timestamp);
+        expect(after[i].diagnosis).to.equal(before[i].diagnosis);
+        expect(after[i].treatment).to.equal(before[i].treatment);
+        expect(after[i].notes).to.equal(before[i].notes);
+      }
+
+      // Records remain queryable under the documented read policy post-transfer.
+      const ids = await registry.getPetRecordsByDateRange(petId, 0, before[1].timestamp + 1000n);
+      expect(ids.length).to.equal(2);
+    });
+  });
+
 });
 
