@@ -67,3 +67,6 @@ MIT
 
 <!-- handsoff-issue-395 -->
 - #395: Cap event type and pet ID collections in subscriptions
+
+<!-- handsoff-issue-437 -->
+- #437: Handle absent seed initializer with an actionable diagnostic
