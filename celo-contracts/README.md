@@ -24,10 +24,29 @@ PRIVATE_KEY=your_wallet_private_key
 CELOSCAN_API_KEY=your_celoscan_api_key
 ```
 
-| Variable            | Required for                          |
-|---------------------|----------------------------------------|
-| `PRIVATE_KEY`        | Signing transactions on `alfajores`/`celo` |
-| `CELOSCAN_API_KEY`   | Verifying contracts on Celoscan       |
+| Variable           | Required for                               | Default |
+|--------------------|--------------------------------------------|---------|
+| `PRIVATE_KEY`      | Signing transactions on `alfajores`/`celo` | none    |
+| `CELOSCAN_API_KEY` | Verifying contracts on Celoscan            | none    |
+
+`scripts/register-pet.js` additionally reads these variables (set them in the
+shell or `.env`):
+
+| Variable           | Required | Default      | Validation |
+|--------------------|----------|--------------|------------|
+| `CONTRACT_ADDRESS` | yes      | none         | Script aborts if unset |
+| `PET_NAME`         | no       | `Rex`        | Must be non-empty (not whitespace) |
+| `PET_SPECIES`      | no       | `Dog`        | Must be non-empty (not whitespace) |
+| `PET_BREED`        | no       | `Labrador`   | Must be non-empty (not whitespace) |
+| `PET_BIRTHDAY`     | no       | `2020-01-01` | Must be non-empty (not whitespace) |
+
+Complete example:
+
+```bash
+CONTRACT_ADDRESS=0xDeployedAddress \
+PET_NAME=Rex PET_SPECIES=Dog PET_BREED=Labrador PET_BIRTHDAY=2020-01-01 \
+npx hardhat run scripts/register-pet.js --network alfajores
+```
 
 ## Running tests
 
@@ -99,6 +118,26 @@ Registers a sample pet against an already-deployed `KoraRegistry`. Requires
 ```bash
 CONTRACT_ADDRESS=0xDeployedAddress npx hardhat run scripts/register-pet.js --network alfajores
 ```
+
+### Persistent local node
+
+The in-process `hardhat` network is ephemeral: every `npx hardhat run` creates
+a fresh chain, so an address deployed in one invocation does not exist in the
+next. To deploy and then register, start a persistent node and use the
+`localhost` network:
+
+```bash
+# Terminal 1: keep this running
+npx hardhat node
+
+# Terminal 2: deploy; the address is printed (also shown in the node's logs)
+npx hardhat run scripts/deploy.js --network localhost
+
+# Register against that address
+CONTRACT_ADDRESS=0xAddressPrintedByDeploy npx hardhat run scripts/register-pet.js --network localhost
+```
+
+Restarting the node resets the chain, so redeploy and use the new address.
 
 ## Networks
 
