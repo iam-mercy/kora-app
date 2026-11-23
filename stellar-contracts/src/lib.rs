@@ -2856,6 +2856,8 @@ pub enum DisputeKey {
     ArbitratorList,
     /// Per-arbitrator stats (reputation, total rulings) (issue #294).
     ArbitratorStats(Address),
+    /// Persisted arbitration ruling outcome per dispute.
+    DisputeOutcome(u64),
 }
 
 #[contract]
@@ -12627,6 +12629,10 @@ impl KoraContract {
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
 
+        if dispute.status != DisputeStatus::EvidencePhase {
+            panic_with_error!(&env, ContractError::InvalidState);
+        }
+
         dispute.status = DisputeStatus::UnderReview;
         env.storage().instance().set(&key, &dispute);
 
@@ -12664,6 +12670,10 @@ impl KoraContract {
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
 
+        if dispute.status != DisputeStatus::UnderReview {
+            panic_with_error!(&env, ContractError::InvalidState);
+        }
+
         let final_status = match outcome {
             DisputeOutcome::InFavorOfClaimer => DisputeStatus::Resolved,
             DisputeOutcome::InFavorOfTarget => DisputeStatus::Resolved,
@@ -12673,6 +12683,9 @@ impl KoraContract {
         dispute.status = final_status.clone();
         dispute.resolved_at = Some(env.ledger().timestamp());
         env.storage().instance().set(&key, &dispute);
+        env.storage()
+            .instance()
+            .set(&DisputeKey::DisputeOutcome(dispute_id), &outcome);
 
         let mut stats: ArbitratorStats = env
             .storage()
@@ -12691,10 +12704,23 @@ impl KoraContract {
 
         env.events().publish(
             (Symbol::new(&env, "DisputeResolved"),),
-            (dispute_id, final_status, env.ledger().timestamp()),
+            (
+                1u32, // payload version
+                dispute_id,
+                final_status,
+                outcome,
+                env.ledger().timestamp(),
+            ),
         );
 
         true
+    }
+
+    /// Get the stored arbitration ruling outcome for a dispute, if ruled.
+    pub fn get_dispute_outcome(env: Env, dispute_id: u64) -> Option<DisputeOutcome> {
+        env.storage()
+            .instance()
+            .get(&DisputeKey::DisputeOutcome(dispute_id))
     }
 
     /// Retrieve a single evidence record for a dispute.
@@ -15156,19 +15182,10 @@ impl KoraContract {
             .set(&DataKey::ContractVersion, &version);
     }
 
+    /// Legacy entrypoint; routed through `set_version` so the zero-version and
+    /// monotonic checks cannot be bypassed.
     pub fn migrate_version(env: Env, admin: Address, major: u32, minor: u32, patch: u32) {
-        admin.require_auth();
-        if !Self::is_admin_address(&env, &admin) {
-            panic_with_error!(&env, ContractError::NotAnAdmin);
-        }
-        let version = ContractVersion {
-            major,
-            minor,
-            patch,
-        };
-        env.storage()
-            .instance()
-            .set(&DataKey::ContractVersion, &version);
+        Self::set_version(env, admin, major, minor, patch);
     }
 
     pub fn migrate_v1_to_v2(env: Env, admin: Address) {
