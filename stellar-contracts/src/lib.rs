@@ -3495,6 +3495,18 @@ impl KoraContract {
             .get::<InsuranceKey, u64>(&InsuranceKey::ClaimCount)
             .unwrap_or(0);
         let claim_id = count.checked_add(1)?;
+        // Preflight the pet-scoped claim counter overflow check before any
+        // storage writes happen, so a saturated counter cannot leave a
+        // dangling claim/fingerprint/global-count mutation behind. (Issue #458)
+        let pet_count = env
+            .storage()
+            .instance()
+            .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimCount(pet_id))
+            .unwrap_or(0);
+        let next_pet_count = match pet_count.checked_add(1) {
+            Some(next) => next,
+            None => panic_with_error!(&env, ContractError::CounterOverflow),
+        };
         let claim = InsuranceClaim {
             claim_id,
             pet_id,
@@ -3516,12 +3528,6 @@ impl KoraContract {
         env.storage().instance().set(&InsuranceKey::Claim(claim_id), &claim);
         env.storage().instance().set(&InsuranceKey::ClaimCount, &claim_id);
         env.storage().instance().set(&fingerprint, &claim_id);
-        let pet_count = env
-            .storage()
-            .instance()
-            .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimCount(pet_id))
-            .unwrap_or(0);
-        let next_pet_count = pet_count.checked_add(1)?;
         env.storage().instance().set(
             &InsuranceKey::PetClaimIndex((pet_id, next_pet_count)),
             &claim_id,
