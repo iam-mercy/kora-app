@@ -70,3 +70,6 @@ MIT
 
 <!-- handsoff-issue-369 -->
 - #369: Keep repeated remove_medical_record calls from resetting retention age
+
+<!-- handsoff-issue-370 -->
+- #370: Prevent note updates on tombstoned medical records
