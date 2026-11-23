@@ -1283,5 +1283,44 @@ describe("KoraRegistry", function () {
       expect(ownerPets.map(id => id.toString())).to.deep.equal(["1", "2"]);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Issue #456 — failed record additions must leave all indexes unchanged
+  // ---------------------------------------------------------------------------
+  describe("#456 — addMedicalRecord rejects do not corrupt indexes", function () {
+    it("rejects an oversized diagnosis between two valid writes and keeps indexes consistent", async function () {
+      const petId = await registerPet(owner);
+
+      await registry.connect(vet).addMedicalRecord(petId, 0, "diag1", "treat1", "");
+
+      const oversized = "x".repeat(1001); // MAX_LONG_LEN is 1000
+      await expect(
+        registry.connect(vet).addMedicalRecord(petId, 0, oversized, "treat", "")
+      ).to.be.revertedWith("KoraRegistry: diagnosis too long");
+
+      const tx = await registry.connect(vet).addMedicalRecord(petId, 0, "diag2", "treat2", "");
+      const receipt = await tx.wait();
+      const event = receipt.logs.find(l => l.fragment && l.fragment.name === "MedicalRecordAdded");
+      const recordId2 = event.args.recordId;
+
+      // The rejected write must not have consumed a recordId: IDs stay sequential.
+      expect(recordId2).to.equal(2n);
+
+      const count = await registry.getMedicalRecordCount(petId);
+      expect(count).to.equal(2n);
+
+      const records = await registry.getMedicalRecords(petId);
+      expect(records.length).to.equal(2);
+      expect(records[0].diagnosis).to.equal("diag1");
+      expect(records[1].diagnosis).to.equal("diag2");
+
+      // The correction target mapping for the second record must point at the
+      // correct page slot even though a rejected write happened in between.
+      await registry.connect(vet).correctMedicalRecord(recordId2, "fixed", "treat2", "");
+      const recordsAfter = await registry.getMedicalRecords(petId);
+      expect(recordsAfter[1].diagnosis).to.equal("fixed");
+      expect(recordsAfter[0].diagnosis).to.equal("diag1");
+    });
+  });
 });
 
