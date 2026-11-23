@@ -171,6 +171,8 @@ fn offspring_ids_are_persisted_in_stable_paginated_order() {
     assert_page(client.get_offspring_ids(&record_id, &4, &2), &offspring_ids[4..5]);
     assert_page(client.get_offspring_ids(&record_id, &0, &0), &[]);
     assert_page(client.get_offspring_ids(&record_id, &5, &2), &[]);
+    // Over-cap limit is clamped to MAX_OFFSPRING_PAGE_SIZE; 5 items < cap returns the final partial page.
+    assert_page(client.get_offspring_ids(&record_id, &0, &u32::MAX), &offspring_ids[..]);
 
     let record = client.get_breeding_record(&record_id).unwrap();
     assert_eq!(record.offspring_count, offspring_ids.len() as u32);
