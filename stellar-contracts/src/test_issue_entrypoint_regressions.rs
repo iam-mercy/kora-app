@@ -1,6 +1,6 @@
 use crate::{
     test_fixtures::{create_test_pet, TestEnv, BASE_TIMESTAMP},
-    BreedingKey, ContractError, Gender, GroomerProfile, GroomingKey, GroomingRecord,
+    BreedingKey, ContractError, DataKey, Gender, GroomerProfile, GroomingKey, GroomingRecord,
     KoraContract, KoraContractClient, PrivacyLevel, ProposalAction, Species,
 };
 use soroban_sdk::{testutils::Address as _, Address, Env, Error, String, Vec};
@@ -36,6 +36,99 @@ fn signer_rotation_stores_one_day_payload_and_executes_after_quorum() {
     assert!(admins.contains(new_signer));
     assert_eq!(te.client.get_admin_threshold(), 2);
     assert!(te.client.get_proposal(&proposal_id).unwrap().executed);
+}
+
+#[test]
+fn rotated_signer_approval_cannot_authorize_an_unrelated_proposal() {
+    let te = TestEnv::new();
+    let replacement = Address::generate(&te.env);
+
+    let set_initial_quorum = te.client.set_quorum_percent(&te.admin1, &100);
+    te.client.approve_proposal(&te.admin1, &set_initial_quorum);
+    te.client.approve_proposal(&te.admin2, &set_initial_quorum);
+    te.advance_time(86_400);
+    te.client.execute_proposal(&set_initial_quorum);
+
+    let pending = te.client.set_quorum_percent(&te.admin1, &75);
+    te.client.approve_proposal(&te.admin1, &pending);
+    te.client.approve_proposal(&te.admin2, &pending);
+
+    let rotation = te
+        .client
+        .propose_signer_rotation(&te.admin1, &te.admin2, &replacement);
+    te.client.approve_proposal(&te.admin1, &rotation);
+    te.client.approve_proposal(&te.admin2, &rotation);
+    te.advance_time(86_400);
+    te.client.execute_proposal(&rotation);
+
+    assert_eq!(
+        te.client.try_execute_proposal(&pending),
+        Err(Ok(Error::from_contract_error(
+            ContractError::ThresholdNotMet as u32
+        )))
+    );
+    assert_eq!(te.client.get_quorum_percent(), 100);
+    assert!(!te.client.get_proposal(&pending).unwrap().executed);
+
+    assert_eq!(
+        te.client.try_approve_proposal(&te.admin2, &pending),
+        Err(Ok(Error::from_contract_error(
+            ContractError::NotAnAdmin as u32
+        )))
+    );
+    te.client.approve_proposal(&replacement, &pending);
+    te.client.execute_proposal(&pending);
+    assert_eq!(te.client.get_quorum_percent(), 75);
+    assert!(te.client.get_proposal(&pending).unwrap().executed);
+}
+
+#[test]
+fn compact_delegations_counts_each_expired_token_once() {
+    let te = TestEnv::new();
+    let pet_id = create_test_pet(&te.env, &te.client, &te.owner);
+    let expired = Address::generate(&te.env);
+    let live = Address::generate(&te.env);
+    let expired_key = DataKey::DecryptionToken((pet_id, expired.clone()));
+    let live_key = DataKey::DecryptionToken((pet_id, live.clone()));
+    let count_key = DataKey::PetDelegationCount(pet_id);
+
+    // Seed the token layout consumed by the compactor.
+    te.env.as_contract(&te.client.address, || {
+        let storage = te.env.storage().instance();
+        storage.set(&expired_key, &BASE_TIMESTAMP);
+        storage.set(&live_key, &(BASE_TIMESTAMP + 1));
+        storage.set(&count_key, &2u64);
+    });
+    let delegates = Vec::from_array(&te.env, [expired.clone(), live, expired]);
+
+    assert_eq!(
+        te.client
+            .compact_delegations(&pet_id, &te.owner, &delegates),
+        1
+    );
+    te.env.as_contract(&te.client.address, || {
+        let storage = te.env.storage().instance();
+        assert!(!storage.has(&expired_key));
+        assert_eq!(storage.get(&live_key), Some(BASE_TIMESTAMP + 1));
+        assert_eq!(storage.get::<_, u64>(&count_key), Some(1));
+    });
+
+    te.advance_time(1);
+    assert_eq!(
+        te.client
+            .compact_delegations(&pet_id, &te.owner, &delegates),
+        1
+    );
+    assert_eq!(
+        te.client
+            .compact_delegations(&pet_id, &te.owner, &delegates),
+        0
+    );
+    te.env.as_contract(&te.client.address, || {
+        let storage = te.env.storage().instance();
+        assert!(!storage.has(&live_key));
+        assert_eq!(storage.get::<_, u64>(&count_key), Some(0));
+    });
 }
 
 #[test]

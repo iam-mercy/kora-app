@@ -34,8 +34,7 @@ SOURCES = [
 ENUM_RE = re.compile(r"#\[contracterror\][\s\S]*?pub enum (\w+)\s*\{([\s\S]*?)\}")
 VARIANT_RE = re.compile(r"^\s*(\w+)\s*=\s*(\d+)\s*,", re.MULTILINE)
 
-# Document rows look like: `| 1 | NotOwner | ... |`
-ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*(\w+)\s*\|", re.MULTILINE)
+VARIANT_CELL_RE = re.compile(r"`([A-Za-z_][A-Za-z_0-9]*)`|([A-Za-z_][A-Za-z_0-9]*)")
 
 
 def parse_sources(sources: list[Path]) -> dict[str, dict[int, str]]:
@@ -51,10 +50,53 @@ def parse_sources(sources: list[Path]) -> dict[str, dict[int, str]]:
     return enums
 
 
-def parse_document(doc: Path) -> dict[int, str]:
-    """Return {discriminant: variant} for the rows of the document table."""
-    text = doc.read_text(encoding="utf-8")
-    return {int(discriminant): variant for discriminant, variant in ROW_RE.findall(text)}
+def parse_document(doc: Path, problems: list[str]) -> dict[int, str]:
+    """Read error-code tables and append diagnostics for malformed rows."""
+    documented: dict[int, str] = {}
+    columns: list[str] = []
+    header_line = 0
+    for line_number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line.startswith("|"):
+            columns = []
+            continue
+        row = [cell.strip() for cell in re.split(r"(?<!\\)\|", line[1:].removesuffix("|"))]
+        if row[:2] == ["Code", "Variant"]:
+            columns = row
+            header_line = line_number
+            continue
+        if not columns:
+            continue
+        if line_number == header_line + 1 and all(
+            re.fullmatch(r":?-+:?", cell) for cell in row
+        ):
+            continue
+
+        location = f"{doc.name}:{line_number}"
+        if len(row) != len(columns):
+            problems.append(
+                f"{location}: expected {len(columns)} cells in error-code row, found {len(row)}"
+            )
+            continue
+
+        empty_columns = [column for column, cell in zip(columns, row) if not cell]
+        if empty_columns:
+            problems.append(f"{location}: empty error-code cells: {', '.join(empty_columns)}")
+            continue
+
+        pair_indices = (0, 2) if columns == ["Code", "Variant"] * 2 else (0,)
+        for index in pair_indices:
+            code, variant_cell = row[index:index + 2]
+            numeric = re.fullmatch(r"[0-9]+", code)
+            variant = VARIANT_CELL_RE.fullmatch(variant_cell)
+            if not numeric:
+                problems.append(f"{location}: invalid numeric error code {code!r}")
+            if not variant:
+                problems.append(f"{location}: invalid error variant {variant_cell!r}")
+            # The second pair is a quick-index entry, validated for shape only.
+            if index == 0 and numeric and variant:
+                documented[int(code)] = variant.group(1) or variant.group(2)
+    return documented
 
 
 def check(doc: Path = DOC, sources: list[Path] | None = None) -> list[str]:
@@ -64,7 +106,7 @@ def check(doc: Path = DOC, sources: list[Path] | None = None) -> list[str]:
 
     problems: list[str] = []
     enums = parse_sources(sources)
-    documented = parse_document(doc)
+    documented = parse_document(doc, problems)
 
     if not enums:
         problems.append("no #[contracterror] enums found in the contract sources")
