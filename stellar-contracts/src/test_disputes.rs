@@ -276,3 +276,34 @@ fn test_verify_evidence_by_arbitrator_succeeds() {
    
 
 /* … truncated 2126 chars — edit only what you need near the top … */
+
+#[test]
+fn test_rule_persists_distinct_outcomes_and_typed_state_errors() {
+    let (env, client, _admin, owner, target, arbitrator, pet_id) = setup();
+
+    let d1 = raise(&client, &env, pet_id, &owner, &target);
+    // start_review before EvidencePhase -> typed InvalidState
+    assert_eq!(
+        client.try_start_review(&d1, &arbitrator).err().unwrap().unwrap(),
+        crate::ContractError::InvalidState
+    );
+    // rule before UnderReview -> typed InvalidState
+    assert_eq!(
+        client
+            .try_rule(&d1, &arbitrator, &DisputeOutcome::InFavorOfTarget)
+            .err()
+            .unwrap()
+            .unwrap(),
+        crate::ContractError::InvalidState
+    );
+    client.submit_evidence(&d1, &target, &String::from_str(&env, "ipfs://e"));
+    client.start_review(&d1, &arbitrator);
+    client.rule(&d1, &arbitrator, &DisputeOutcome::InFavorOfClaimer);
+    assert_eq!(client.get_dispute_outcome(&d1), Some(DisputeOutcome::InFavorOfClaimer));
+
+    let d2 = raise(&client, &env, pet_id, &owner, &target);
+    client.submit_evidence(&d2, &target, &String::from_str(&env, "ipfs://e"));
+    client.start_review(&d2, &arbitrator);
+    client.rule(&d2, &arbitrator, &DisputeOutcome::InFavorOfTarget);
+    assert_eq!(client.get_dispute_outcome(&d2), Some(DisputeOutcome::InFavorOfTarget));
+}

@@ -1,11 +1,23 @@
 const hre = require("hardhat");
+const { validateContractAddress, assertContractDeployed } = require("./lib/registration");
 
 // Usage: CONTRACT_ADDRESS=0x... PET_NAME=Rex PET_SPECIES=Dog PET_BREED=Labrador PET_BIRTHDAY=2020-01-01 npx hardhat run scripts/register-pet.js --network <alfajores|celo|hardhat>
+function findPetRegisteredEvent(receipt, registry) {
+  const registryAddress = String(registry.target).toLowerCase();
+  return receipt.logs
+    .filter((log) => String(log.address).toLowerCase() === registryAddress)
+    .map((log) => {
+      try {
+        return registry.interface.parseLog(log);
+      } catch {
+        return null;
+      }
+    })
+    .find((parsed) => parsed && parsed.name === "PetRegistered");
+}
+
 async function main() {
-  const contractAddress = process.env.CONTRACT_ADDRESS;
-  if (!contractAddress) {
-    throw new Error("Set CONTRACT_ADDRESS to the deployed KoraRegistry address");
-  }
+  const contractAddress = validateContractAddress(process.env.CONTRACT_ADDRESS);
 
   const pet = {
     name: process.env.PET_NAME || "Rex",
@@ -26,20 +38,14 @@ async function main() {
 
   console.log("Registering pet with parameters:", pet);
 
+  await assertContractDeployed(hre.ethers.provider, contractAddress, hre.network.name);
+
   const registry = await hre.ethers.getContractAt("KoraRegistry", contractAddress);
 
   const tx = await registry.registerPet(pet.name, pet.species, pet.breed, pet.birthday);
   const receipt = await tx.wait();
 
-  const event = receipt.logs
-    .map((log) => {
-      try {
-        return registry.interface.parseLog(log);
-      } catch {
-        return null;
-      }
-    })
-    .find((parsed) => parsed && parsed.name === "PetRegistered");
+  const event = findPetRegisteredEvent(receipt, registry);
 
   if (!event || !event.args) {
     throw new Error("PetRegistered event not found in transaction receipt");
@@ -48,7 +54,11 @@ async function main() {
   console.log(`Pet registered with petId: ${event.args.petId}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { findPetRegisteredEvent };

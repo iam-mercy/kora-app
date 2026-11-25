@@ -766,6 +766,46 @@ describe("KoraRegistry", function () {
         );
     });
 
+    it("preserves original authorship and creation time on correction by vet", async function () {
+      const before = await registry.getPetRecords(petId);
+      const originalRecordId = before[0].recordId;
+      const originalPetId = before[0].petId;
+      const originalVet = before[0].vet;
+      const originalRecordType = before[0].recordType;
+      const originalTimestamp = before[0].timestamp;
+
+      await registry.connect(vet).correctMedicalRecord(
+        recordId, "Corrected diagnosis", "Corrected treatment", "Corrected notes"
+      );
+
+      const after = await registry.getPetRecords(petId);
+      expect(after[0].recordId).to.equal(originalRecordId);
+      expect(after[0].petId).to.equal(originalPetId);
+      expect(after[0].vet).to.equal(originalVet);
+      expect(after[0].recordType).to.equal(originalRecordType);
+      expect(after[0].timestamp).to.equal(originalTimestamp);
+    });
+
+    it("preserves original authorship and creation time on correction by admin", async function () {
+      const before = await registry.getPetRecords(petId);
+      const originalRecordId = before[0].recordId;
+      const originalPetId = before[0].petId;
+      const originalVet = before[0].vet;
+      const originalRecordType = before[0].recordType;
+      const originalTimestamp = before[0].timestamp;
+
+      await registry.connect(admin).correctMedicalRecord(
+        recordId, "Admin corrected diag", "Admin corrected treat", ""
+      );
+
+      const after = await registry.getPetRecords(petId);
+      expect(after[0].recordId).to.equal(originalRecordId);
+      expect(after[0].petId).to.equal(originalPetId);
+      expect(after[0].vet).to.equal(originalVet);
+      expect(after[0].recordType).to.equal(originalRecordType);
+      expect(after[0].timestamp).to.equal(originalTimestamp);
+    });
+
     it("blocks correction while paused and resumes after unpause", async function () {
       await registry.connect(admin).pause();
       await expect(
@@ -1263,5 +1303,99 @@ describe("KoraRegistry", function () {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Issue #455 — failed registrations must not consume pet IDs
+  // ---------------------------------------------------------------------------
+  describe("#455 — registerPet rejects do not consume IDs", function () {
+    it("keeps petIds sequential and owner index clean across a rejected call", async function () {
+      const petId1 = await registerPet(owner);
+      expect(petId1).to.equal(1n);
+
+      // Invalid registration: empty name must revert without allocating an ID.
+      await expect(
+        registry.connect(owner).registerPet("", PET.species, PET.breed, PET.birthday)
+      ).to.be.revertedWith("KoraRegistry: name required");
+
+      const petId2 = await registerPet(owner);
+      expect(petId2).to.equal(2n);
+
+      const ownerPets = await registry.getPetsByOwner(owner.address);
+      expect(ownerPets.map(id => id.toString())).to.deep.equal(["1", "2"]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Issue #456 — failed record additions must leave all indexes unchanged
+  // ---------------------------------------------------------------------------
+  describe("#456 — addMedicalRecord rejects do not corrupt indexes", function () {
+    it("rejects an oversized diagnosis between two valid writes and keeps indexes consistent", async function () {
+      const petId = await registerPet(owner);
+
+      await registry.connect(vet).addMedicalRecord(petId, 0, "diag1", "treat1", "");
+
+      const oversized = "x".repeat(1001); // MAX_LONG_LEN is 1000
+      await expect(
+        registry.connect(vet).addMedicalRecord(petId, 0, oversized, "treat", "")
+      ).to.be.revertedWith("KoraRegistry: diagnosis too long");
+
+      const tx = await registry.connect(vet).addMedicalRecord(petId, 0, "diag2", "treat2", "");
+      const receipt = await tx.wait();
+      const event = receipt.logs.find(l => l.fragment && l.fragment.name === "MedicalRecordAdded");
+      const recordId2 = event.args.recordId;
+
+      // The rejected write must not have consumed a recordId: IDs stay sequential.
+      expect(recordId2).to.equal(2n);
+
+      const count = await registry.getMedicalRecordCount(petId);
+      expect(count).to.equal(2n);
+
+      const records = await registry.getMedicalRecords(petId);
+      expect(records.length).to.equal(2);
+      expect(records[0].diagnosis).to.equal("diag1");
+      expect(records[1].diagnosis).to.equal("diag2");
+
+      // The correction target mapping for the second record must point at the
+      // correct page slot even though a rejected write happened in between.
+      await registry.connect(vet).correctMedicalRecord(recordId2, "fixed", "treat2", "");
+      const recordsAfter = await registry.getMedicalRecords(petId);
+      expect(recordsAfter[1].diagnosis).to.equal("fixed");
+      expect(recordsAfter[0].diagnosis).to.equal("diag1");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Issue #454 — record IDs must remain globally unique across pets
+  // ---------------------------------------------------------------------------
+  describe("#454 — global recordId uniqueness across pets", function () {
+    it("interleaves record creation for two pets and corrects each by its global ID", async function () {
+      const petA = await registerPet(owner);
+      const petB = await registerPet(other);
+
+      const txA1 = await registry.connect(vet).addMedicalRecord(petA, 0, "A-diag1", "treat", "");
+      const idA1 = (await txA1.wait()).logs.find(l => l.fragment?.name === "MedicalRecordAdded").args.recordId;
+
+      const txB1 = await registry.connect(vet).addMedicalRecord(petB, 0, "B-diag1", "treat", "");
+      const idB1 = (await txB1.wait()).logs.find(l => l.fragment?.name === "MedicalRecordAdded").args.recordId;
+
+      const txA2 = await registry.connect(vet).addMedicalRecord(petA, 0, "A-diag2", "treat", "");
+      const idA2 = (await txA2.wait()).logs.find(l => l.fragment?.name === "MedicalRecordAdded").args.recordId;
+
+      // All four interleaved writes share one global counter, so every recordId
+      // across both pets must be distinct even though each pet has its own
+      // per-pet array index starting back at 0.
+      const ids = [idA1, idB1, idA2].map(id => id.toString());
+      expect(new Set(ids).size).to.equal(ids.length);
+
+      // Correcting by the global recordId must only ever touch the record it
+      // names, never the other pet's row at the same per-pet index.
+      await registry.connect(vet).correctMedicalRecord(idB1, "B-fixed", "treat", "");
+
+      const recordsA = await registry.getMedicalRecords(petA);
+      const recordsB = await registry.getMedicalRecords(petB);
+      expect(recordsA[0].diagnosis).to.equal("A-diag1");
+      expect(recordsA[1].diagnosis).to.equal("A-diag2");
+      expect(recordsB[0].diagnosis).to.equal("B-fixed");
+    });
+  });
 });
 
