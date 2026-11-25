@@ -1,11 +1,9 @@
 const hre = require("hardhat");
+const { validateContractAddress, assertContractDeployed } = require("./lib/registration");
 
 // Usage: CONTRACT_ADDRESS=0x... PET_NAME=Rex PET_SPECIES=Dog PET_BREED=Labrador PET_BIRTHDAY=2020-01-01 npx hardhat run scripts/register-pet.js --network <alfajores|celo|hardhat>
 async function main() {
-  const contractAddress = process.env.CONTRACT_ADDRESS;
-  if (!contractAddress) {
-    throw new Error("Set CONTRACT_ADDRESS to the deployed KoraRegistry address");
-  }
+  const contractAddress = validateContractAddress(process.env.CONTRACT_ADDRESS);
 
   const pet = {
     name: process.env.PET_NAME || "Rex",
@@ -25,6 +23,8 @@ async function main() {
   }
 
   console.log("Registering pet with parameters:", pet);
+
+  await assertContractDeployed(hre.ethers.provider, contractAddress, hre.network.name);
 
   const registry = await hre.ethers.getContractAt("KoraRegistry", contractAddress);
 
