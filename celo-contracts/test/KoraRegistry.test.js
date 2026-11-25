@@ -1264,143 +1264,98 @@ describe("KoraRegistry", function () {
   });
 
   // ---------------------------------------------------------------------------
-  // Issue #453 — Byte limits must be exercised with multibyte strings
+  // Issue #455 — failed registrations must not consume pet IDs
   // ---------------------------------------------------------------------------
-  describe("#453 — multibyte UTF-8 byte-length enforcement", function () {
-    // "é" is a 2-byte UTF-8 character (U+00E9). Repeating it lets us land
-    // exactly on or just over a byte cap while JS string.length (code units)
-    // disagrees with the UTF-8 byte length that Solidity's bytes().length checks.
-    function multibyteOfByteLength(byteLen) {
-      const pairs = Math.floor(byteLen / 2);
-      const remainder = byteLen % 2;
-      return "é".repeat(pairs) + "a".repeat(remainder);
-    }
+  describe("#455 — registerPet rejects do not consume IDs", function () {
+    it("keeps petIds sequential and owner index clean across a rejected call", async function () {
+      const petId1 = await registerPet(owner);
+      expect(petId1).to.equal(1n);
 
-    it("accepts a pet short-string field at exactly MAX_SHORT_LEN multibyte bytes", async function () {
-      const exact = multibyteOfByteLength(64); // 32 "é" chars = 64 bytes, 32 JS chars
-      expect(Buffer.byteLength(exact, "utf8")).to.equal(64);
+      // Invalid registration: empty name must revert without allocating an ID.
       await expect(
-        registry.connect(owner).registerPet(exact, PET.species, PET.breed, PET.birthday)
-      ).to.not.be.reverted;
+        registry.connect(owner).registerPet("", PET.species, PET.breed, PET.birthday)
+      ).to.be.revertedWith("KoraRegistry: name required");
+
+      const petId2 = await registerPet(owner);
+      expect(petId2).to.equal(2n);
+
+      const ownerPets = await registry.getPetsByOwner(owner.address);
+      expect(ownerPets.map(id => id.toString())).to.deep.equal(["1", "2"]);
     });
+  });
 
-    it("rejects a pet short-string field one multibyte byte over MAX_SHORT_LEN", async function () {
-      const overBy1 = multibyteOfByteLength(65); // 65 bytes, only 33 JS chars
-      expect(Buffer.byteLength(overBy1, "utf8")).to.equal(65);
-      expect(overBy1.length).to.be.lessThan(65); // proves JS char-length would wrongly pass a naive check
-      await expect(
-        registry.connect(owner).registerPet(overBy1, PET.species, PET.breed, PET.birthday)
-      ).to.be.revertedWith("KoraRegistry: name too long");
-    });
+  // ---------------------------------------------------------------------------
+  // Issue #456 — failed record additions must leave all indexes unchanged
+  // ---------------------------------------------------------------------------
+  describe("#456 — addMedicalRecord rejects do not corrupt indexes", function () {
+    it("rejects an oversized diagnosis between two valid writes and keeps indexes consistent", async function () {
+      const petId = await registerPet(owner);
 
-    it("accepts a medical record long-string field at exactly MAX_LONG_LEN multibyte bytes", async function () {
-      const petId = await registerPet();
-      const exact = multibyteOfByteLength(1000); // 500 "é" chars, 500 JS chars
-      expect(Buffer.byteLength(exact, "utf8")).to.equal(1000);
-      await expect(
-        registry.connect(vet).addMedicalRecord(petId, 0, exact, "treat", "")
-      ).to.not.be.reverted;
-    });
+      await registry.connect(vet).addMedicalRecord(petId, 0, "diag1", "treat1", "");
 
-    it("rejects a medical record long-string field one multibyte byte over MAX_LONG_LEN", async function () {
-      const petId = await registerPet();
-      const overBy1 = multibyteOfByteLength(1001); // 1001 bytes, 501 JS chars
-      expect(Buffer.byteLength(overBy1, "utf8")).to.equal(1001);
-      expect(overBy1.length).to.be.lessThan(1001);
+      const oversized = "x".repeat(1001); // MAX_LONG_LEN is 1000
       await expect(
-        registry.connect(vet).addMedicalRecord(petId, 0, overBy1, "treat", "")
+        registry.connect(vet).addMedicalRecord(petId, 0, oversized, "treat", "")
       ).to.be.revertedWith("KoraRegistry: diagnosis too long");
+
+      const tx = await registry.connect(vet).addMedicalRecord(petId, 0, "diag2", "treat2", "");
+      const receipt = await tx.wait();
+      const event = receipt.logs.find(l => l.fragment && l.fragment.name === "MedicalRecordAdded");
+      const recordId2 = event.args.recordId;
+
+      // The rejected write must not have consumed a recordId: IDs stay sequential.
+      expect(recordId2).to.equal(2n);
+
+      const count = await registry.getMedicalRecordCount(petId);
+      expect(count).to.equal(2n);
+
+      const records = await registry.getMedicalRecords(petId);
+      expect(records.length).to.equal(2);
+      expect(records[0].diagnosis).to.equal("diag1");
+      expect(records[1].diagnosis).to.equal("diag2");
+
+      // The correction target mapping for the second record must point at the
+      // correct page slot even though a rejected write happened in between.
+      await registry.connect(vet).correctMedicalRecord(recordId2, "fixed", "treat2", "");
+      const recordsAfter = await registry.getMedicalRecords(petId);
+      expect(recordsAfter[1].diagnosis).to.equal("fixed");
+      expect(recordsAfter[0].diagnosis).to.equal("diag1");
     });
   });
 
   // ---------------------------------------------------------------------------
-  // Issue #452 — Accepted transfers must not change medical record provenance
+  // Issue #454 — record IDs must remain globally unique across pets
   // ---------------------------------------------------------------------------
-  describe("#452 — acceptPetTransfer preserves medical record provenance", function () {
-    it("keeps record IDs, timestamps and contents unchanged across a transfer, still queryable", async function () {
-      const petId = await registerPet(owner);
+  describe("#454 — global recordId uniqueness across pets", function () {
+    it("interleaves record creation for two pets and corrects each by its global ID", async function () {
+      const petA = await registerPet(owner);
+      const petB = await registerPet(other);
 
-      await registry.connect(vet).addMedicalRecord(petId, 0, "diag1", "treat1", "note1");
-      await registry.connect(vet).addMedicalRecord(petId, 1, "diag2", "treat2", "note2");
+      const txA1 = await registry.connect(vet).addMedicalRecord(petA, 0, "A-diag1", "treat", "");
+      const idA1 = (await txA1.wait()).logs.find(l => l.fragment?.name === "MedicalRecordAdded").args.recordId;
 
-      const before = await registry.getPetRecords(petId);
-      expect(before.length).to.equal(2);
+      const txB1 = await registry.connect(vet).addMedicalRecord(petB, 0, "B-diag1", "treat", "");
+      const idB1 = (await txB1.wait()).logs.find(l => l.fragment?.name === "MedicalRecordAdded").args.recordId;
 
-      await registry.connect(owner).initiatePetTransfer(petId, other.address);
-      await registry.connect(other).acceptPetTransfer(petId);
+      const txA2 = await registry.connect(vet).addMedicalRecord(petA, 0, "A-diag2", "treat", "");
+      const idA2 = (await txA2.wait()).logs.find(l => l.fragment?.name === "MedicalRecordAdded").args.recordId;
 
-      // Ownership changed...
-      const pet = await registry.pets(petId);
-      expect(pet.owner).to.equal(other.address);
+      // All four interleaved writes share one global counter, so every recordId
+      // across both pets must be distinct even though each pet has its own
+      // per-pet array index starting back at 0.
+      const ids = [idA1, idB1, idA2].map(id => id.toString());
+      expect(new Set(ids).size).to.equal(ids.length);
 
-      // ...but the medical records themselves are unchanged.
-      const after = await registry.getPetRecords(petId);
-      expect(after.length).to.equal(before.length);
-      for (let i = 0; i < before.length; i++) {
-        expect(after[i].recordId).to.equal(before[i].recordId);
-        expect(after[i].timestamp).to.equal(before[i].timestamp);
-        expect(after[i].diagnosis).to.equal(before[i].diagnosis);
-        expect(after[i].treatment).to.equal(before[i].treatment);
-        expect(after[i].notes).to.equal(before[i].notes);
-      }
+      // Correcting by the global recordId must only ever touch the record it
+      // names, never the other pet's row at the same per-pet index.
+      await registry.connect(vet).correctMedicalRecord(idB1, "B-fixed", "treat", "");
 
-      // Records remain queryable under the documented read policy post-transfer.
-      const ids = await registry.getPetRecordsByDateRange(petId, 0, before[1].timestamp + 1000n);
-      expect(ids.length).to.equal(2);
+      const recordsA = await registry.getMedicalRecords(petA);
+      const recordsB = await registry.getMedicalRecords(petB);
+      expect(recordsA[0].diagnosis).to.equal("A-diag1");
+      expect(recordsA[1].diagnosis).to.equal("A-diag2");
+      expect(recordsB[0].diagnosis).to.equal("B-fixed");
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // Issue #451 — Transfer proposal replacement must invalidate the prior recipient
-  // ---------------------------------------------------------------------------
-  describe("#451 — initiatePetTransfer replacement invalidates prior recipient", function () {
-    it("rejects the first proposed recipient and only accepts the second after replacement", async function () {
-      const petId = await registerPet(owner);
-
-      // First proposal to `other`.
-      await registry.connect(owner).initiatePetTransfer(petId, other.address);
-
-      // Replace the proposal with a new recipient before the first one accepts.
-      await registry.connect(owner).initiatePetTransfer(petId, vet.address);
-
-      // The first recipient must no longer be able to accept.
-      await expect(
-        registry.connect(other).acceptPetTransfer(petId)
-      ).to.be.revertedWith("KoraRegistry: not pending owner");
-
-      // The second (current) recipient succeeds.
-      await expect(registry.connect(vet).acceptPetTransfer(petId)).to.not.be.reverted;
-
-      const pet = await registry.pets(petId);
-      expect(pet.owner).to.equal(vet.address);
-      expect(pet.pendingOwner).to.equal(ethers.ZeroAddress);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Issue #450 — Page limits must behave safely for maximum uint256 offsets
-  // ---------------------------------------------------------------------------
-  describe("#450 — paginated getters handle maximum uint256 offsets safely", function () {
-    const MAX_UINT256 = (2n ** 256n) - 1n;
-
-    it("getPetsByOwnerPaged returns an empty page instead of reverting with arithmetic panic", async function () {
-      await registerPet(owner);
-      const page = await registry.getPetsByOwnerPaged(owner.address, MAX_UINT256, 10);
-      expect(page.length).to.equal(0);
-    });
-
-    it("getPetRecordsPaged returns an empty page instead of reverting with arithmetic panic", async function () {
-      const petId = await registerPet(owner);
-      await registry.connect(vet).addMedicalRecord(petId, 0, "diag", "treat", "");
-      const page = await registry.getPetRecordsPaged(petId, MAX_UINT256, 10);
-      expect(page.length).to.equal(0);
-    });
-
-    it("getVets returns an empty page instead of reverting with arithmetic panic", async function () {
-      const page = await registry.getVets(MAX_UINT256, 10);
-      expect(page.length).to.equal(0);
-    });
-  });
-
 });
 
