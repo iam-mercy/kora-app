@@ -3926,10 +3926,16 @@ impl KoraContract {
     /// - If the caller is not an admin.
     /// - If the admin has already approved.
     /// - If the proposal has expired.
-    /// - If the proposal is not in `Pending` state.
+    /// - If the proposal is neither pending nor awaiting replacement votes
+    ///   after a signer was removed during the timelock.
     pub fn approve_proposal(env: Env, admin: Address, proposal_id: u64) {
         admin.require_auth();
-        if !Self::is_admin_address(&env, &admin) {
+        let admins: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&SystemKey::Admins)
+            .unwrap_or_else(|| Vec::new(&env));
+        if !admins.contains(&admin) {
             panic_with_error!(&env, ContractError::NotAnAdmin);
         }
 
@@ -3939,7 +3945,14 @@ impl KoraContract {
             .get(&SystemKey::Proposal(proposal_id))
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
 
-        if proposal.state != ProposalState::Pending {
+        let active_approvals = proposal
+            .approvals
+            .iter()
+            .filter(|approver| admins.contains(approver))
+            .count() as u32;
+        let replacing_votes = proposal.state == ProposalState::TimelockPending
+            && active_approvals < proposal.approvals.len();
+        if proposal.state != ProposalState::Pending && !replacing_votes {
             panic_with_error!(&env, ContractError::InvalidState);
         }
         let now = env.ledger().timestamp();
@@ -3950,14 +3963,12 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::AdminAlreadyApproved);
         }
 
-        let was_below_threshold =
-            (proposal.approvals.len() as u32) < proposal.required_approvals;
         proposal.approvals.push_back(admin);
 
-        // Transition to TimelockPending only on the vote that first crosses
-        // the threshold. Subsequent approvals leave the state unchanged.
-        if was_below_threshold
-            && proposal.approvals.len() as u32 >= proposal.required_approvals
+        // Start the timelock when current signers first reach the threshold.
+        // Replacement votes on an existing timelock preserve its deadline.
+        if proposal.state == ProposalState::Pending
+            && active_approvals + 1 >= proposal.required_approvals
         {
             let timelock_duration: u64 = env
                 .storage()
@@ -3980,8 +3991,8 @@ impl KoraContract {
     /// requirements and whose timelock has elapsed.
     ///
     /// # Quorum check
-    /// Quorum is calculated against the admin list at execution time:
-    ///   `approvals.len() >= quorum_percent * admin_count / 100`
+    /// Only approvals from current signers count toward threshold and quorum.
+    /// Quorum uses the admin list and percentage at execution time.
     /// A quorum_percent of 0 disables the quorum check entirely.
     ///
     /// # Panics
@@ -4011,8 +4022,12 @@ impl KoraContract {
             .get(&SystemKey::Admins)
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::NoAdminsConfigured));
 
-        // Check threshold
-        if proposal.approvals.len() < proposal.required_approvals {
+        let active_approvals = proposal
+            .approvals
+            .iter()
+            .filter(|approver| admin_list.contains(approver))
+            .count() as u32;
+        if active_approvals < proposal.required_approvals {
             panic_with_error!(&env, ContractError::ThresholdNotMet);
         }
 
@@ -4029,7 +4044,7 @@ impl KoraContract {
             if admin_count == 0 {
                 panic_with_error!(&env, ContractError::NoAdminsConfigured);
             }
-            let votes_cast = proposal.approvals.len() as u64;
+            let votes_cast = u64::from(active_approvals);
             // Ceiling division so that e.g. 50 % of 3 admins = 2 votes, not 1.
             let required_votes =
                 ((current_quorum as u64).saturating_mul(admin_count) + 99) / 100;
