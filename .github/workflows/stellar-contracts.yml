@@ -9,6 +9,9 @@ on:
     paths:
       - 'stellar-contracts/**'
       - '.github/workflows/stellar-contracts.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
 
 permissions: read-all
 
@@ -83,7 +86,7 @@ jobs:
           components: clippy
       - name: Run clippy
         working-directory: stellar-contracts
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   stellar-contracts:
     runs-on: ubuntu-latest

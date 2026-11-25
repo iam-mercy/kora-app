@@ -2858,6 +2858,11 @@ pub enum DisputeKey {
     ArbitratorStats(Address),
 }
 
+/// Maximum number of offspring IDs returned by `get_offspring_ids` per call.
+pub const MAX_OFFSPRING_PAGE_SIZE: u32 = 50;
+/// Maximum number of points returned by `get_stat_series_page` per call.
+pub const MAX_STAT_SERIES_PAGE_SIZE: u32 = 100;
+
 #[contract]
 pub struct KoraContract;
 
@@ -4074,6 +4079,56 @@ impl KoraContract {
             }
         }
         result
+    }
+
+    /// Paginated variant of `get_stat_series`. Scans the series in timestamp
+    /// order starting at `cursor` (0-based position in the retained series),
+    /// returning at most `limit` matching points (capped at
+    /// `MAX_STAT_SERIES_PAGE_SIZE`) within the inclusive `[start_ts, end_ts]`
+    /// range. The second tuple element is the cursor for the next page, or
+    /// `None` when the series is exhausted.
+    pub fn get_stat_series_page(
+        env: Env,
+        key: String,
+        start_ts: u64,
+        end_ts: u64,
+        cursor: u64,
+        limit: u32,
+    ) -> (Vec<StatPoint>, Option<u64>) {
+        let mut result = Vec::new(&env);
+        if start_ts > end_ts || limit == 0 {
+            return (result, None);
+        }
+        const MAX_POINTS: u64 = 365;
+        let limit = limit.min(MAX_STAT_SERIES_PAGE_SIZE);
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&StatSeriesKey::Count(key.clone()))
+            .unwrap_or(0);
+        let head: u64 = env
+            .storage()
+            .instance()
+            .get(&StatSeriesKey::Head(key.clone()))
+            .unwrap_or(0);
+        let mut offset = cursor;
+        while offset < count {
+            if result.len() >= limit {
+                return (result, Some(offset));
+            }
+            let slot = (head + offset) % MAX_POINTS;
+            if let Some(p) = env
+                .storage()
+                .instance()
+                .get::<StatSeriesKey, StatPoint>(&StatSeriesKey::Point((key.clone(), slot + 1)))
+            {
+                if p.timestamp >= start_ts && p.timestamp <= end_ts {
+                    result.push_back(p);
+                }
+            }
+            offset += 1;
+        }
+        (result, None)
     }
 
     /// Returns the statistics for a given vet address.
@@ -13256,6 +13311,9 @@ impl KoraContract {
 
     /// Returns paginated offspring IDs for a breeding record (Issue #1031).
     /// Storage key: `BreedingKey::BreedingOffspringIndex((record_id, seq))`
+    ///
+    /// `limit` is capped at `MAX_OFFSPRING_PAGE_SIZE` (50); larger values are
+    /// clamped, and `limit == 0` returns an empty page.
     pub fn get_offspring_ids(
         env: Env,
         record_id: u64,
@@ -13273,6 +13331,7 @@ impl KoraContract {
             return result;
         }
 
+        let limit = limit.min(MAX_OFFSPRING_PAGE_SIZE);
         let start = (offset as u64) + 1; // 1-based index
         let end = (start + (limit as u64) - 1).min(total);
 
