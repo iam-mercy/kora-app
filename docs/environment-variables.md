@@ -1,5 +1,12 @@
 # Environment Variables Reference — backend-2fa
 
+> **Companion backend boundary:** The `kora-2fa` service is **not** part of this
+> repository and its source location and compatible revision are not recorded here
+> (maintainers: add the repo URL and supported commit/tag). Every variable below
+> configures that service only. None of them are needed to compile, test or deploy
+> the contracts in `stellar-contracts/` or `celo-contracts/`; those use their own
+> tooling (`cargo`, `hardhat`) as described in the README.
+
 Single authoritative list of every environment variable that affects the
 `kora-2fa` service at runtime. Variables are grouped by subsystem.
 
