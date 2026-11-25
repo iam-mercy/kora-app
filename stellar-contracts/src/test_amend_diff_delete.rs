@@ -294,4 +294,76 @@ mod test_amend_diff_delete {
         // from_version 50 is out of bounds (max is 1)
         client.diff_record_versions(&pet_id, &record_id, &50u32, &1u32);
     }
+
+    // -------------------------------------------------------------------------
+    // #442 – the 5-version amendment cap must be enforced atomically: a
+    // rejected 6th amendment must leave the count, current record, and all
+    // prior versions completely unchanged.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_sixth_amendment_rejected_and_state_unchanged() {
+        let env = Env::default();
+        let (client, _admin, vet, _owner, pet_id) = setup(&env);
+        let record_id = add_record(&client, &env, &vet, pet_id);
+
+        // Fill five versions.
+        for i in 1..=5u32 {
+            let input = MedicalRecordAmendmentInput {
+                diagnosis: Some(String::from_str(&env, &format!("Diagnosis v{}", i))),
+                treatment: None,
+                medications: None,
+                notes: None,
+            };
+            let version = client.amend_medical_record(&pet_id, &record_id, &vet, &input);
+            assert_eq!(version, i);
+        }
+
+        let record_before = client.get_medical_record(&record_id).unwrap();
+        let count_before: u32 = env.as_contract(&client.address, || {
+            env.storage()
+                .instance()
+                .get(&crate::MedicalKey::MedicalRecordAmendmentCount(record_id))
+                .unwrap_or(0)
+        });
+
+        // Sixth amendment must be rejected.
+        let sixth_input = MedicalRecordAmendmentInput {
+            diagnosis: Some(String::from_str(&env, "Diagnosis v6 should not land")),
+            treatment: None,
+            medications: None,
+            notes: None,
+        };
+        let result = client.try_amend_medical_record(&pet_id, &record_id, &vet, &sixth_input);
+        assert!(result.is_err(), "sixth amendment must be rejected");
+
+        // Amendment count must remain at 5 (no partial write of the count).
+        let count_after: u32 = env.as_contract(&client.address, || {
+            env.storage()
+                .instance()
+                .get(&crate::MedicalKey::MedicalRecordAmendmentCount(record_id))
+                .unwrap_or(0)
+        });
+        assert_eq!(count_after, count_before);
+        assert_eq!(count_after, 5);
+
+        // The current record must be unchanged (still reflecting version 5).
+        let record_after = client.get_medical_record(&record_id).unwrap();
+        assert_eq!(record_after.diagnosis, record_before.diagnosis);
+        assert_eq!(record_after.diagnosis, String::from_str(&env, "Diagnosis v5"));
+
+        // No version 6 amendment must have been written.
+        let v6 = client.get_medical_record_amendment(&record_id, &6u32);
+        assert!(v6.is_none(), "no version 6 amendment must exist after rejection");
+
+        // All prior versions (1..=5) must remain intact and untouched.
+        for i in 1..=5u32 {
+            let amendment = client.get_medical_record_amendment(&record_id, &i).unwrap();
+            assert_eq!(amendment.version, i);
+            assert_eq!(
+                amendment.changes.diagnosis,
+                Some(String::from_str(&env, &format!("Diagnosis v{}", i)))
+            );
+        }
+    }
 }

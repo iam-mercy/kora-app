@@ -1,6 +1,7 @@
 {
   "name": "celo-contracts",
   "version": "1.0.0",
+  "license": "MIT",
   "description": "KoraRegistry Solidity contract for the Celo network",
   "private": true,
   "repository": {
@@ -8,10 +9,14 @@
     "url": "https://github.com/iam-mercy/kora-app.git",
     "directory": "celo-contracts"
   },
+  "engines": {
+    "node": ">=20 <23",
+    "npm": ">=10"
+  },
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "lint": "solhint 'contracts/**/*.sol'",
+    "lint": "solhint --max-warnings 0 'contracts/**/*.sol'",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "audit:dev": "npm audit --audit-level=high",
     "audit": "npm run audit:prod && npm run audit:dev"

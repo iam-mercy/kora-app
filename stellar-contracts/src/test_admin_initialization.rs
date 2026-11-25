@@ -408,3 +408,16 @@ fn test_init_admin_initializes_multisig_config() {
     // Verify set_threshold works seamlessly without panicking with AdminsNotSet
     client.set_threshold(&admin, &1u32);
 }
+
+#[test]
+fn test_migrate_version_cannot_bypass_validation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = setup_client(&env);
+    let admin = Address::generate(&env);
+    client.init_multisig(&admin, &vec![&env, admin.clone()], &1u32);
+    client.set_version(&admin, &2u32, &0u32, &0u32);
+    assert!(client.try_migrate_version(&admin, &0u32, &0u32, &0u32).is_err());
+    assert!(client.try_migrate_version(&admin, &1u32, &0u32, &0u32).is_err());
+    client.migrate_version(&admin, &2u32, &1u32, &0u32);
+}

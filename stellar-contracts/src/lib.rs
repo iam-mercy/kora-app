@@ -321,6 +321,8 @@ mod test_remove_admin;
 #[cfg(test)]
 mod test_statistics;
 #[cfg(test)]
+mod test_offspring_index_holes;
+#[cfg(test)]
 mod test_statistics_snapshot;
 #[cfg(test)]
 mod test_storage_quota;
@@ -377,6 +379,19 @@ const MAX_BEHAVIOR_DESCRIPTION_LEN: u32 = 500;
 /// Maximum number of weight entries returned per `get_weight_history_paged`
 /// call. (Issue #301)
 const MAX_WEIGHT_HISTORY_PAGE_SIZE: u32 = 50;
+
+/// Maximum byte length of an insurance claim description. (Issue #460)
+const MAX_INSURANCE_CLAIM_DESCRIPTION_LEN: u32 = 500;
+/// Maximum number of items returned per page for insurance policy/claim
+/// collection queries. (Issue #461)
+const MAX_INSURANCE_PAGE_SIZE: u32 = 50;
+
+/// Maximum byte length of an insurance policy ID. (Issue #459)
+const MAX_INSURANCE_POLICY_ID_LEN: u32 = 64;
+/// Maximum byte length of an insurance provider name. (Issue #459)
+const MAX_INSURANCE_PROVIDER_LEN: u32 = 100;
+/// Maximum byte length of an insurance coverage type string. (Issue #459)
+const MAX_INSURANCE_COVERAGE_TYPE_LEN: u32 = 50;
 
 /// Maximum allowed drift, in seconds, between a caller-supplied feeding
 /// timestamp and the current ledger time. A small allowance (5 minutes)
@@ -2856,7 +2871,14 @@ pub enum DisputeKey {
     ArbitratorList,
     /// Per-arbitrator stats (reputation, total rulings) (issue #294).
     ArbitratorStats(Address),
+    /// Persisted arbitration ruling outcome per dispute.
+    DisputeOutcome(u64),
 }
+
+/// Maximum number of offspring IDs returned by `get_offspring_ids` per call.
+pub const MAX_OFFSPRING_PAGE_SIZE: u32 = 50;
+/// Maximum number of points returned by `get_stat_series_page` per call.
+pub const MAX_STAT_SERIES_PAGE_SIZE: u32 = 100;
 
 #[contract]
 pub struct KoraContract;
@@ -3283,6 +3305,42 @@ impl KoraContract {
         policies
     }
 
+    /// Bounded, cursor-based page over a pet's insurance policies. (Issue #461)
+    ///
+    /// `start_after` is the last 1-based policy index already returned by the
+    /// caller (0 to start from the beginning). `limit` is capped at
+    /// `MAX_INSURANCE_PAGE_SIZE`; a `limit` of 0 returns an empty page without
+    /// scanning any storage. Concatenating successive pages reproduces the
+    /// same ordered result as `get_all_pet_policies`.
+    pub fn get_pet_policies_page(
+        env: Env,
+        pet_id: u64,
+        start_after: u64,
+        limit: u32,
+    ) -> Vec<InsurancePolicy> {
+        let mut policies = Vec::new(&env);
+        if limit == 0 {
+            return policies;
+        }
+        let page_limit = limit.min(MAX_INSURANCE_PAGE_SIZE) as u64;
+        let count = env
+            .storage()
+            .instance()
+            .get::<InsuranceKey, u64>(&InsuranceKey::PetPolicyCount(pet_id))
+            .unwrap_or(0);
+        let mut index = start_after.saturating_add(1);
+        let end = count.min(start_after.saturating_add(page_limit));
+        while index <= end {
+            if let Some(policy) = env.storage().instance().get::<InsuranceKey, InsurancePolicy>(
+                &InsuranceKey::PetPolicyIndex((pet_id, index)),
+            ) {
+                policies.push_back(policy);
+            }
+            index += 1;
+        }
+        policies
+    }
+
     pub fn get_pet_insurance(env: Env, pet_id: u64) -> Option<InsurancePolicy> {
         let count = env
             .storage()
@@ -3316,7 +3374,14 @@ impl KoraContract {
             None => return false,
         };
         pet.owner.require_auth();
-        if policy_id.is_empty() || expiry_date < env.ledger().timestamp() {
+        if policy_id.is_empty()
+            || policy_id.len() > MAX_INSURANCE_POLICY_ID_LEN
+            || provider.is_empty()
+            || provider.len() > MAX_INSURANCE_PROVIDER_LEN
+            || coverage_type.is_empty()
+            || coverage_type.len() > MAX_INSURANCE_COVERAGE_TYPE_LEN
+            || expiry_date < env.ledger().timestamp()
+        {
             return false;
         }
         let count = env
@@ -3457,6 +3522,12 @@ impl KoraContract {
         if !policy.active || policy.expiry_date < now || amount > policy.coverage_limit {
             return None;
         }
+        if amount == 0
+            || description.is_empty()
+            || description.len() > MAX_INSURANCE_CLAIM_DESCRIPTION_LEN
+        {
+            env.panic_with_error(ContractError::InvalidInput);
+        }
         let fingerprint = InsuranceKey::ClaimByInvoice((
             pet_id,
             policy.policy_id.clone(),
@@ -3472,10 +3543,11 @@ impl KoraContract {
             .get::<InsuranceKey, u64>(&InsuranceKey::ClaimCount)
             .unwrap_or(0);
         let claim_id = count.checked_add(1)?;
+        let policy_id = policy.policy_id.clone();
         let claim = InsuranceClaim {
             claim_id,
             pet_id,
-            policy_id: policy.policy_id.clone(),
+            policy_id: policy_id.clone(),
             amount,
             date: now,
             status: InsuranceClaimStatus::Pending,
@@ -3493,12 +3565,6 @@ impl KoraContract {
         env.storage().instance().set(&InsuranceKey::Claim(claim_id), &claim);
         env.storage().instance().set(&InsuranceKey::ClaimCount, &claim_id);
         env.storage().instance().set(&fingerprint, &claim_id);
-        let pet_count = env
-            .storage()
-            .instance()
-            .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimCount(pet_id))
-            .unwrap_or(0);
-        let next_pet_count = pet_count.checked_add(1)?;
         env.storage().instance().set(
             &InsuranceKey::PetClaimIndex((pet_id, next_pet_count)),
             &claim_id,
@@ -3569,6 +3635,83 @@ impl KoraContract {
                     }
                 }
             }
+        }
+        claims
+    }
+
+    /// Bounded, cursor-based page over a pet's insurance claims. (Issue #461)
+    ///
+    /// `start_after` is the last 1-based claim index already scanned (0 to
+    /// start from the beginning). `limit` is capped at
+    /// `MAX_INSURANCE_PAGE_SIZE` claim *slots scanned* (not matches found), so
+    /// a page never scans an unbounded history even when matches are sparse.
+    /// Concatenating successive pages reproduces the same ordered result as
+    /// `get_pet_insurance_claims`.
+    pub fn get_pet_insurance_claims_page(
+        env: Env,
+        pet_id: u64,
+        start_after: u64,
+        limit: u32,
+    ) -> Vec<InsuranceClaim> {
+        let mut claims = Vec::new(&env);
+        if limit == 0 {
+            return claims;
+        }
+        let page_limit = limit.min(MAX_INSURANCE_PAGE_SIZE) as u64;
+        let count = Self::get_insurance_claim_count(env.clone(), pet_id);
+        let mut index = start_after.saturating_add(1);
+        let end = count.min(start_after.saturating_add(page_limit));
+        while index <= end {
+            if let Some(claim_id) = env
+                .storage()
+                .instance()
+                .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimIndex((pet_id, index)))
+            {
+                if let Some(claim) = Self::get_insurance_claim(env.clone(), claim_id) {
+                    claims.push_back(claim);
+                }
+            }
+            index += 1;
+        }
+        claims
+    }
+
+    /// Bounded, cursor-based, status-filtered page over a pet's insurance
+    /// claims. (Issue #461)
+    ///
+    /// Scans at most `limit` (capped at `MAX_INSURANCE_PAGE_SIZE`) claim
+    /// slots starting after `start_after`, regardless of how many match
+    /// `status` — so a page with sparse matches still terminates within a
+    /// bounded scan budget instead of scanning the full history. Concatenated
+    /// pages reproduce the same ordered result as `get_claims_by_status`.
+    pub fn get_claims_by_status_page(
+        env: Env,
+        pet_id: u64,
+        status: InsuranceClaimStatus,
+        start_after: u64,
+        limit: u32,
+    ) -> Vec<InsuranceClaim> {
+        let mut claims = Vec::new(&env);
+        if limit == 0 {
+            return claims;
+        }
+        let page_limit = limit.min(MAX_INSURANCE_PAGE_SIZE) as u64;
+        let count = Self::get_insurance_claim_count(env.clone(), pet_id);
+        let mut index = start_after.saturating_add(1);
+        let end = count.min(start_after.saturating_add(page_limit));
+        while index <= end {
+            if let Some(claim_id) = env
+                .storage()
+                .instance()
+                .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimIndex((pet_id, index)))
+            {
+                if let Some(claim) = Self::get_insurance_claim(env.clone(), claim_id) {
+                    if claim.status == status {
+                        claims.push_back(claim);
+                    }
+                }
+            }
+            index += 1;
         }
         claims
     }
@@ -3783,10 +3926,16 @@ impl KoraContract {
     /// - If the caller is not an admin.
     /// - If the admin has already approved.
     /// - If the proposal has expired.
-    /// - If the proposal is not in `Pending` state.
+    /// - If the proposal is neither pending nor awaiting replacement votes
+    ///   after a signer was removed during the timelock.
     pub fn approve_proposal(env: Env, admin: Address, proposal_id: u64) {
         admin.require_auth();
-        if !Self::is_admin_address(&env, &admin) {
+        let admins: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&SystemKey::Admins)
+            .unwrap_or_else(|| Vec::new(&env));
+        if !admins.contains(&admin) {
             panic_with_error!(&env, ContractError::NotAnAdmin);
         }
 
@@ -3796,7 +3945,14 @@ impl KoraContract {
             .get(&SystemKey::Proposal(proposal_id))
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
 
-        if proposal.state != ProposalState::Pending {
+        let active_approvals = proposal
+            .approvals
+            .iter()
+            .filter(|approver| admins.contains(approver))
+            .count() as u32;
+        let replacing_votes = proposal.state == ProposalState::TimelockPending
+            && active_approvals < proposal.approvals.len();
+        if proposal.state != ProposalState::Pending && !replacing_votes {
             panic_with_error!(&env, ContractError::InvalidState);
         }
         let now = env.ledger().timestamp();
@@ -3807,14 +3963,12 @@ impl KoraContract {
             panic_with_error!(&env, ContractError::AdminAlreadyApproved);
         }
 
-        let was_below_threshold =
-            (proposal.approvals.len() as u32) < proposal.required_approvals;
         proposal.approvals.push_back(admin);
 
-        // Transition to TimelockPending only on the vote that first crosses
-        // the threshold. Subsequent approvals leave the state unchanged.
-        if was_below_threshold
-            && proposal.approvals.len() as u32 >= proposal.required_approvals
+        // Start the timelock when current signers first reach the threshold.
+        // Replacement votes on an existing timelock preserve its deadline.
+        if proposal.state == ProposalState::Pending
+            && active_approvals + 1 >= proposal.required_approvals
         {
             let timelock_duration: u64 = env
                 .storage()
@@ -3837,8 +3991,8 @@ impl KoraContract {
     /// requirements and whose timelock has elapsed.
     ///
     /// # Quorum check
-    /// Quorum is calculated against the admin list at execution time:
-    ///   `approvals.len() >= quorum_percent * admin_count / 100`
+    /// Only approvals from current signers count toward threshold and quorum.
+    /// Quorum uses the admin list and percentage at execution time.
     /// A quorum_percent of 0 disables the quorum check entirely.
     ///
     /// # Panics
@@ -3868,8 +4022,12 @@ impl KoraContract {
             .get(&SystemKey::Admins)
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::NoAdminsConfigured));
 
-        // Check threshold
-        if proposal.approvals.len() < proposal.required_approvals {
+        let active_approvals = proposal
+            .approvals
+            .iter()
+            .filter(|approver| admin_list.contains(approver))
+            .count() as u32;
+        if active_approvals < proposal.required_approvals {
             panic_with_error!(&env, ContractError::ThresholdNotMet);
         }
 
@@ -3886,7 +4044,7 @@ impl KoraContract {
             if admin_count == 0 {
                 panic_with_error!(&env, ContractError::NoAdminsConfigured);
             }
-            let votes_cast = proposal.approvals.len() as u64;
+            let votes_cast = u64::from(active_approvals);
             // Ceiling division so that e.g. 50 % of 3 admins = 2 votes, not 1.
             let required_votes =
                 ((current_quorum as u64).saturating_mul(admin_count) + 99) / 100;
@@ -4074,6 +4232,56 @@ impl KoraContract {
             }
         }
         result
+    }
+
+    /// Paginated variant of `get_stat_series`. Scans the series in timestamp
+    /// order starting at `cursor` (0-based position in the retained series),
+    /// returning at most `limit` matching points (capped at
+    /// `MAX_STAT_SERIES_PAGE_SIZE`) within the inclusive `[start_ts, end_ts]`
+    /// range. The second tuple element is the cursor for the next page, or
+    /// `None` when the series is exhausted.
+    pub fn get_stat_series_page(
+        env: Env,
+        key: String,
+        start_ts: u64,
+        end_ts: u64,
+        cursor: u64,
+        limit: u32,
+    ) -> (Vec<StatPoint>, Option<u64>) {
+        let mut result = Vec::new(&env);
+        if start_ts > end_ts || limit == 0 {
+            return (result, None);
+        }
+        const MAX_POINTS: u64 = 365;
+        let limit = limit.min(MAX_STAT_SERIES_PAGE_SIZE);
+        let count: u64 = env
+            .storage()
+            .instance()
+            .get(&StatSeriesKey::Count(key.clone()))
+            .unwrap_or(0);
+        let head: u64 = env
+            .storage()
+            .instance()
+            .get(&StatSeriesKey::Head(key.clone()))
+            .unwrap_or(0);
+        let mut offset = cursor;
+        while offset < count {
+            if result.len() >= limit {
+                return (result, Some(offset));
+            }
+            let slot = (head + offset) % MAX_POINTS;
+            if let Some(p) = env
+                .storage()
+                .instance()
+                .get::<StatSeriesKey, StatPoint>(&StatSeriesKey::Point((key.clone(), slot + 1)))
+            {
+                if p.timestamp >= start_ts && p.timestamp <= end_ts {
+                    result.push_back(p);
+                }
+            }
+            offset += 1;
+        }
+        (result, None)
     }
 
     /// Returns the statistics for a given vet address.
@@ -8111,20 +8319,18 @@ impl KoraContract {
         expiry_timestamp: u64,
     ) -> bool {
         KoraContract::require_admin_auth(&env, &admin);
-        let verified = if let Some(mut vet) = env
-            .storage()
-            .instance()
-            .get::<DataKey, Vet>(&DataKey::Vet(vet_address))
-        {
-            vet.verified = true;
-            vet.license_expiry = expiry_timestamp;
-            env.storage()
+        // Go through the shared path so the verified-vet index and count stay in sync.
+        let verified = Self::_verify_vet_internal(&env, vet_address.clone());
+        if verified {
+            if let Some(mut vet) = env
+                .storage()
                 .instance()
-                .set(&DataKey::Vet(vet.address.clone()), &vet);
-            true
-        } else {
-            false
-        };
+                .get::<DataKey, Vet>(&DataKey::Vet(vet_address.clone()))
+            {
+                vet.license_expiry = expiry_timestamp;
+                env.storage().instance().set(&DataKey::Vet(vet_address), &vet);
+            }
+        }
         if verified {
             Self::record_admin_activity(&env, &admin, "verify_vet_with_expiry");
         }
@@ -12627,6 +12833,10 @@ impl KoraContract {
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
 
+        if dispute.status != DisputeStatus::EvidencePhase {
+            panic_with_error!(&env, ContractError::InvalidState);
+        }
+
         dispute.status = DisputeStatus::UnderReview;
         env.storage().instance().set(&key, &dispute);
 
@@ -12664,6 +12874,10 @@ impl KoraContract {
             .get(&key)
             .unwrap_or_else(|| panic_with_error!(&env, ContractError::InvalidInput));
 
+        if dispute.status != DisputeStatus::UnderReview {
+            panic_with_error!(&env, ContractError::InvalidState);
+        }
+
         let final_status = match outcome {
             DisputeOutcome::InFavorOfClaimer => DisputeStatus::Resolved,
             DisputeOutcome::InFavorOfTarget => DisputeStatus::Resolved,
@@ -12673,6 +12887,9 @@ impl KoraContract {
         dispute.status = final_status.clone();
         dispute.resolved_at = Some(env.ledger().timestamp());
         env.storage().instance().set(&key, &dispute);
+        env.storage()
+            .instance()
+            .set(&DisputeKey::DisputeOutcome(dispute_id), &outcome);
 
         let mut stats: ArbitratorStats = env
             .storage()
@@ -12691,10 +12908,23 @@ impl KoraContract {
 
         env.events().publish(
             (Symbol::new(&env, "DisputeResolved"),),
-            (dispute_id, final_status, env.ledger().timestamp()),
+            (
+                1u32, // payload version
+                dispute_id,
+                final_status,
+                outcome,
+                env.ledger().timestamp(),
+            ),
         );
 
         true
+    }
+
+    /// Get the stored arbitration ruling outcome for a dispute, if ruled.
+    pub fn get_dispute_outcome(env: Env, dispute_id: u64) -> Option<DisputeOutcome> {
+        env.storage()
+            .instance()
+            .get(&DisputeKey::DisputeOutcome(dispute_id))
     }
 
     /// Retrieve a single evidence record for a dispute.
@@ -13256,6 +13486,9 @@ impl KoraContract {
 
     /// Returns paginated offspring IDs for a breeding record (Issue #1031).
     /// Storage key: `BreedingKey::BreedingOffspringIndex((record_id, seq))`
+    ///
+    /// `limit` is capped at `MAX_OFFSPRING_PAGE_SIZE` (50); larger values are
+    /// clamped, and `limit == 0` returns an empty page.
     pub fn get_offspring_ids(
         env: Env,
         record_id: u64,
@@ -13273,6 +13506,7 @@ impl KoraContract {
             return result;
         }
 
+        let limit = limit.min(MAX_OFFSPRING_PAGE_SIZE);
         let start = (offset as u64) + 1; // 1-based index
         let end = (start + (limit as u64) - 1).min(total);
 
@@ -15156,19 +15390,10 @@ impl KoraContract {
             .set(&DataKey::ContractVersion, &version);
     }
 
+    /// Legacy entrypoint; routed through `set_version` so the zero-version and
+    /// monotonic checks cannot be bypassed.
     pub fn migrate_version(env: Env, admin: Address, major: u32, minor: u32, patch: u32) {
-        admin.require_auth();
-        if !Self::is_admin_address(&env, &admin) {
-            panic_with_error!(&env, ContractError::NotAnAdmin);
-        }
-        let version = ContractVersion {
-            major,
-            minor,
-            patch,
-        };
-        env.storage()
-            .instance()
-            .set(&DataKey::ContractVersion, &version);
+        Self::set_version(env, admin, major, minor, patch);
     }
 
     pub fn migrate_v1_to_v2(env: Env, admin: Address) {

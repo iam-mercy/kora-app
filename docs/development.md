@@ -117,16 +117,22 @@ invoke `propose_init` without `admins` and `threshold`.
 ## Wasm Size Audit
 
 The transfer/adoption contract is audited with `twiggy` after building the
-Soroban Wasm target:
+Soroban Wasm target. Like the root `stellar-contracts` crate, it depends on
+`soroban-sdk` 28, so the artifact must come from `stellar contract build`
+(stellar-cli >= v25.2.0), which targets `wasm32v1-none`; a plain `cargo
+build` for a wasm target now hard-errors:
 
 ```bash
 cd stellar-contracts/contracts/pet-transfer-adoption
-cargo build --release --target wasm32-unknown-unknown
-twiggy top -n 12 target/wasm32-unknown-unknown/release/pet_transfer_adoption.wasm
+stellar contract build --optimize=false
+twiggy top -n 12 ../../../target/wasm32v1-none/release/pet_transfer_adoption.wasm
 ```
 
 Measured reduction after enabling a contract-local size release profile
-(`opt-level = "z"`, LTO, single codegen unit, stripped symbols, abort panics):
+(`opt-level = "z"`, LTO, single codegen unit, stripped symbols, abort panics)
+(historical measurement, taken against the then-current
+`cargo build --target wasm32-unknown-unknown` output; re-measure against the
+current `stellar contract build` artifact before relying on these numbers):
 
 | Build | Wasm bytes |
 |---|---:|

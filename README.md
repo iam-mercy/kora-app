@@ -55,7 +55,7 @@ npx hardhat compile
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Kora contributors. Both `celo-contracts/` and `stellar-contracts/` are covered by this root license.
 
 ## Handsoff notes
 
@@ -68,8 +68,8 @@ MIT
 <!-- handsoff-issue-395 -->
 - #395: Cap event type and pet ID collections in subscriptions
 
-<!-- handsoff-issue-369 -->
-- #369: Keep repeated remove_medical_record calls from resetting retention age
+<!-- handsoff-issue-437 -->
+- #437: Handle absent seed initializer with an actionable diagnostic
 
-<!-- handsoff-issue-370 -->
-- #370: Prevent note updates on tombstoned medical records
+<!-- handsoff-issue-438 -->
+- #438: Subscription expiry must free capacity without deleting live matches

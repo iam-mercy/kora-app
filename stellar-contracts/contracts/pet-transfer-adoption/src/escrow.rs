@@ -178,6 +178,15 @@ pub fn update_fee_config(env: &Env, new_fee_bps: u32, new_fee_recipient: Address
 // ─── Operations ───────────────────────────────────────────────────────────────
 
 /// Buyer deposits adoption fee into escrow.
+///
+/// `amount` is in the **raw base units of the configured escrow token contract**
+/// (not necessarily XLM stroops). The scale depends on the token's `decimals()`:
+/// a 7-decimal token (native XLM) uses 10_000_000 units per 1 token, while a
+/// 6-decimal token such as USDC uses 1_000_000 units per 1 token.
+/// Clients must query `decimals()` on the token contract (e.g.
+/// `stellar contract invoke --id <TOKEN> -- decimals`) before scaling.
+/// Example: depositing 25 USDC (6 decimals) means `amount = 25_000_000`;
+/// the same call with a 7-decimal token would need `250_000_000`.
 pub fn deposit_fee(env: &Env, transfer_id: u64, buyer: Address, seller: Address, amount: i128) {
     buyer.require_auth();
     if amount <= 0 {
@@ -225,11 +234,17 @@ pub fn finalize_transfer(env: &Env, caller: Address, transfer_id: u64) {
     let seller_amount = entry.amount - platform_fee;
     let contract = env.current_contract_address();
     let client = token_client(env);
-    client.transfer(&contract, &entry.seller, &seller_amount);
+    // Resolve the fee recipient and perform the platform-fee transfer BEFORE paying
+    // the seller. The fee recipient is admin-configurable and can be rotated or
+    // otherwise unable to receive funds (e.g. a frozen/unauthorized account); doing
+    // this transfer first ensures that if it fails, no funds have moved at all and
+    // the escrow entry is left untouched in the `Held` state rather than leaving the
+    // seller paid while settlement did not complete. Closes issue #446.
     if platform_fee > 0 {
         let fee_recipient = get_fee_recipient(env).expect("fee recipient not configured");
         client.transfer(&contract, &fee_recipient, &platform_fee);
     }
+    client.transfer(&contract, &entry.seller, &seller_amount);
     entry.status = EscrowStatus::Released;
     env.storage().persistent().set(&key, &entry);
     env.events().publish(
@@ -528,6 +543,30 @@ mod tests {
         assert_eq!(c.balance(&c.contract), 0);
     }
 
+    /// Settlement must use the fee rate snapshotted at deposit time, even after the
+    /// fee recipient and rate are rotated, while paying the fee to the currently
+    /// configured recipient.
+    #[test]
+    fn finalize_uses_deposit_time_rate_and_current_recipient_after_rotation() {
+        let c = setup();
+        let new_recipient = Address::generate(&c.env);
+        c.run(|| {
+            init_escrow_config(&c.env, 250, c.platform.clone(), c.token.clone());
+            deposit_fee(&c.env, 104, c.buyer.clone(), c.seller.clone(), 10_000_000);
+
+            // Rotate both the fee rate and the recipient after deposit.
+            update_fee_config(&c.env, 500, new_recipient.clone());
+
+            finalize_transfer(&c.env, c.buyer.clone(), 104);
+        });
+        // Fee is computed with the original 250 bps rate (250_000), not the new 500 bps.
+        assert_eq!(c.balance(&c.seller), 9_750_000);
+        // Fee is paid to the newly configured recipient, not the original one.
+        assert_eq!(c.balance(&new_recipient), 250_000);
+        assert_eq!(c.balance(&c.platform), 0);
+        assert_eq!(c.balance(&c.contract), 0);
+    }
+
     /// With a zero fee the seller receives the whole amount and no fee transfer occurs.
     #[test]
     fn finalize_with_zero_fee_pays_full_amount_to_seller() {
@@ -558,6 +597,64 @@ mod tests {
     }
 
     // ── Issue #1006: missing-entry error-path tests ───────────────────────────
+
+    /// If the platform-fee transfer fails (e.g. the fee recipient's account is
+    /// deauthorized/frozen on the asset's issuer), the whole settlement must roll
+    /// back: the seller must not have been paid, the contract must still hold the
+    /// full escrowed amount, and the escrow entry must remain `Held`.
+    #[test]
+    #[should_panic]
+    fn finalize_transfer_rolls_back_when_platform_transfer_fails() {
+        let c = setup();
+        c.run(|| {
+            init_escrow_config(&c.env, 250, c.platform.clone(), c.token.clone());
+            deposit_fee(&c.env, 999, c.buyer.clone(), c.seller.clone(), 10_000_000);
+        });
+
+        // Deauthorize the fee recipient so the platform-fee transfer fails.
+        StellarAssetClient::new(&c.env, &c.token).set_authorized(&c.platform, &false);
+
+        // This call is expected to panic because the platform-fee transfer fails.
+        c.run(|| {
+            finalize_transfer(&c.env, c.buyer.clone(), 999);
+        });
+    }
+
+    /// Companion check to the panic test above: after a failed settlement, nothing
+    /// must have moved and the entry must still be settleable once the recipient
+    /// is re-authorized.
+    #[test]
+    fn finalize_transfer_state_intact_after_failed_platform_transfer() {
+        let c = setup();
+        c.run(|| {
+            init_escrow_config(&c.env, 250, c.platform.clone(), c.token.clone());
+            deposit_fee(&c.env, 998, c.buyer.clone(), c.seller.clone(), 10_000_000);
+        });
+
+        StellarAssetClient::new(&c.env, &c.token).set_authorized(&c.platform, &false);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            c.run(|| {
+                finalize_transfer(&c.env, c.buyer.clone(), 998);
+            });
+        }));
+        assert!(result.is_err(), "expected finalize_transfer to panic when platform transfer fails");
+
+        // Nothing should have moved: seller unpaid, contract still holds full amount.
+        assert_eq!(c.balance(&c.seller), 0);
+        assert_eq!(c.balance(&c.contract), 10_000_000);
+        c.run(|| {
+            assert_eq!(get_escrow(&c.env, 998).unwrap().status, EscrowStatus::Held);
+        });
+
+        // Re-authorize and confirm settlement now succeeds cleanly.
+        StellarAssetClient::new(&c.env, &c.token).set_authorized(&c.platform, &true);
+        c.run(|| {
+            finalize_transfer(&c.env, c.buyer.clone(), 998);
+        });
+        assert_eq!(c.balance(&c.seller), 9_750_000);
+        assert_eq!(c.balance(&c.platform), 250_000);
+        assert_eq!(c.balance(&c.contract), 0);
+    }
 
     /// finalize_transfer panics with "escrow not found" when no entry exists.
     #[test]
@@ -846,6 +943,42 @@ mod tests {
             deposit_fee(&c.env, 203, c.buyer.clone(), c.seller.clone(), 1_000_000);
             admin_resolve_dispute(&c.env, 203, DisputeDecision::RefundBuyer);
         });
+    }
+
+    /// Dust conservation: across a range of small escrow amounts, split ratios, and
+    /// fee rates (all exercising integer-division rounding), the total paid out to
+    /// buyer, seller, and platform must always exactly equal the escrowed amount.
+    #[test]
+    fn admin_resolve_dispute_split_conserves_dust_across_small_amounts() {
+        let amounts: [i128; 7] = [1, 3, 7, 11, 13, 99, 1_000_003];
+        let seller_bps_variants: [u32; 5] = [1, 3333, 5000, 6667, 9999];
+        let fee_bps_variants: [u32; 4] = [0, 1, 250, 9999];
+
+        let mut transfer_id: u64 = 10_000;
+        for &amount in amounts.iter() {
+            for &seller_bps in seller_bps_variants.iter() {
+                for &fee_bps in fee_bps_variants.iter() {
+                    let c = setup();
+                    let buyer_before = c.balance(&c.buyer);
+                    c.run(|| {
+                        init_escrow_config(&c.env, fee_bps, c.platform.clone(), c.token.clone());
+                        deposit_fee(&c.env, transfer_id, c.buyer.clone(), c.seller.clone(), amount);
+                        dispute_transfer(&c.env, transfer_id, c.buyer.clone());
+                        admin_resolve_dispute(&c.env, transfer_id, DisputeDecision::Split(seller_bps));
+                    });
+                    let seller_got = c.balance(&c.seller);
+                    let platform_got = c.balance(&c.platform);
+                    let buyer_got = buyer_before - c.balance(&c.buyer);
+                    assert_eq!(
+                        seller_got + platform_got + buyer_got,
+                        amount,
+                        "dust lost for amount={amount} seller_bps={seller_bps} fee_bps={fee_bps}"
+                    );
+                    assert_eq!(c.balance(&c.contract), 0);
+                    transfer_id += 1;
+                }
+            }
+        }
     }
 
     // ── Issue #235: finalize_transfer caller authorization ────────────────────
