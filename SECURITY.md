@@ -16,7 +16,7 @@ Reporting scope: vulnerabilities in the contract source of the packages above at
 If you discover a security vulnerability, please report it privately:
 
 1. **DO NOT** create a public GitHub issue
-2. Email: [security contact needed]
+2. Use GitHub private vulnerability reporting: <https://github.com/iam-mercy/kora-app/security/advisories/new> (Security tab → "Report a vulnerability"). Maintainers must keep private vulnerability reporting enabled in the repository settings.
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
