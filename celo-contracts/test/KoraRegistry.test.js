@@ -766,6 +766,46 @@ describe("KoraRegistry", function () {
         );
     });
 
+    it("preserves original authorship and creation time on correction by vet", async function () {
+      const before = await registry.getPetRecords(petId);
+      const originalRecordId = before[0].recordId;
+      const originalPetId = before[0].petId;
+      const originalVet = before[0].vet;
+      const originalRecordType = before[0].recordType;
+      const originalTimestamp = before[0].timestamp;
+
+      await registry.connect(vet).correctMedicalRecord(
+        recordId, "Corrected diagnosis", "Corrected treatment", "Corrected notes"
+      );
+
+      const after = await registry.getPetRecords(petId);
+      expect(after[0].recordId).to.equal(originalRecordId);
+      expect(after[0].petId).to.equal(originalPetId);
+      expect(after[0].vet).to.equal(originalVet);
+      expect(after[0].recordType).to.equal(originalRecordType);
+      expect(after[0].timestamp).to.equal(originalTimestamp);
+    });
+
+    it("preserves original authorship and creation time on correction by admin", async function () {
+      const before = await registry.getPetRecords(petId);
+      const originalRecordId = before[0].recordId;
+      const originalPetId = before[0].petId;
+      const originalVet = before[0].vet;
+      const originalRecordType = before[0].recordType;
+      const originalTimestamp = before[0].timestamp;
+
+      await registry.connect(admin).correctMedicalRecord(
+        recordId, "Admin corrected diag", "Admin corrected treat", ""
+      );
+
+      const after = await registry.getPetRecords(petId);
+      expect(after[0].recordId).to.equal(originalRecordId);
+      expect(after[0].petId).to.equal(originalPetId);
+      expect(after[0].vet).to.equal(originalVet);
+      expect(after[0].recordType).to.equal(originalRecordType);
+      expect(after[0].timestamp).to.equal(originalTimestamp);
+    });
+
     it("blocks correction while paused and resumes after unpause", async function () {
       await registry.connect(admin).pause();
       await expect(
