@@ -178,6 +178,15 @@ pub fn update_fee_config(env: &Env, new_fee_bps: u32, new_fee_recipient: Address
 // ─── Operations ───────────────────────────────────────────────────────────────
 
 /// Buyer deposits adoption fee into escrow.
+///
+/// `amount` is in the **raw base units of the configured escrow token contract**
+/// (not necessarily XLM stroops). The scale depends on the token's `decimals()`:
+/// a 7-decimal token (native XLM) uses 10_000_000 units per 1 token, while a
+/// 6-decimal token such as USDC uses 1_000_000 units per 1 token.
+/// Clients must query `decimals()` on the token contract (e.g.
+/// `stellar contract invoke --id <TOKEN> -- decimals`) before scaling.
+/// Example: depositing 25 USDC (6 decimals) means `amount = 25_000_000`;
+/// the same call with a 7-decimal token would need `250_000_000`.
 pub fn deposit_fee(env: &Env, transfer_id: u64, buyer: Address, seller: Address, amount: i128) {
     buyer.require_auth();
     if amount <= 0 {
