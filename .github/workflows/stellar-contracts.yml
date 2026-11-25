@@ -27,9 +27,13 @@ env:
   # The size step below reports the gap as a warning; it does not fail the build.
   CONTRACT_MAX_SIZE_BYTES: 131072
 
+# Job timeouts (timeout-minutes) are sized to ~2-3x typical runtime. The coverage
+# job's `cargo tarpaulin --timeout 300` (5 min per test) must stay below its
+# 30-minute job budget, which also covers cargo-tarpaulin installation.
 jobs:
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,6 +49,7 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -68,6 +73,7 @@ jobs:
 
   fmt:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -79,6 +85,7 @@ jobs:
 
   clippy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -90,6 +97,7 @@ jobs:
 
   stellar-contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -175,6 +183,7 @@ jobs:
   deploy-testnet:
     if: false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: stellar-contracts
     permissions:
       contents: read
