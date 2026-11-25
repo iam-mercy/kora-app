@@ -26,6 +26,13 @@ env:
   # https://github.com/iam-mercy/kora-app/issues/2
   # The size step below reports the gap as a warning; it does not fail the build.
   CONTRACT_MAX_SIZE_BYTES: 131072
+  # Pinned CI tool versions. To update intentionally: bump the value here in a
+  # dedicated PR, confirm the audit/coverage/stellar-contracts jobs pass, and note
+  # the change in the PR description. The Stellar CLI cache key follows
+  # STELLAR_CLI_VERSION, so bumping it invalidates the cached binary.
+  CARGO_AUDIT_VERSION: 0.21.2
+  CARGO_TARPAULIN_VERSION: 0.31.5
+  STELLAR_CLI_VERSION: 25.2.0
 
 # Job timeouts (timeout-minutes) are sized to ~2-3x typical runtime. The coverage
 # job's `cargo tarpaulin --timeout 300` (5 min per test) must stay below its
@@ -42,7 +49,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        run: cargo install --locked cargo-audit --version "$CARGO_AUDIT_VERSION"
 
       - name: Run cargo audit
         run: cargo audit --deny warnings
@@ -58,11 +65,25 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+        run: cargo install --locked cargo-tarpaulin --version "$CARGO_TARPAULIN_VERSION"
 
       - name: Generate coverage report
-        working-directory: stellar-contracts
-        run: cargo tarpaulin --out Xml --timeout 300 --exclude-files tests/* --output-dir coverage
+        # Run from the workspace root and select both contracts explicitly.
+        run: >-
+          cargo tarpaulin
+          -p kora-stellar -p pet_transfer_adoption
+          --out Xml --timeout 300 --exclude-files 'tests/*'
+          --output-dir stellar-contracts/coverage
+
+      - name: Verify coverage includes both contracts
+        run: |
+          REPORT=stellar-contracts/coverage/cobertura.xml
+          for src in 'stellar-contracts/src/' 'stellar-contracts/contracts/pet-transfer-adoption/src/'; do
+            if ! grep -q "filename=\"${src}" "$REPORT"; then
+              echo "Coverage report is missing source files under ${src}" >&2
+              exit 1
+            fi
+          done
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
@@ -117,7 +138,7 @@ jobs:
             ~/.cargo/bin/stellar
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-stellar-cli-25.2.0
+          key: ${{ runner.os }}-stellar-cli-${{ env.STELLAR_CLI_VERSION }}
 
       - name: Install Stellar CLI
         # soroban-sdk 28 requires the contract to be built by `stellar contract
@@ -125,28 +146,40 @@ jobs:
         # sets SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2). A plain
         # `cargo build` now hard-errors.
         run: |
-          if [ ! -x "$HOME/.cargo/bin/stellar" ]; then
-            cargo install --locked stellar-cli --version 25.2.0
+          # Reuse a restored binary only if its version matches; otherwise
+          # (missing or stale cache) reinstall the pinned version.
+          INSTALLED=$("$HOME/.cargo/bin/stellar" --version 2>/dev/null | head -n1 | awk '{print $2}' || true)
+          if [ "$INSTALLED" != "$STELLAR_CLI_VERSION" ]; then
+            echo "stellar version '${INSTALLED:-none}' != ${STELLAR_CLI_VERSION}; installing"
+            cargo install --locked stellar-cli --version "$STELLAR_CLI_VERSION" --force
           fi
+          stellar --version
 
       - name: Install wasm-opt (binaryen)
         run: sudo apt-get update && sudo apt-get install -y binaryen
 
       - name: Build contract Wasm (spec-shaken)
         working-directory: stellar-contracts
-        run: stellar contract build --optimize=false
+        run: |
+          stellar contract build --optimize=false
+          stellar contract build --optimize=false --manifest-path contracts/pet-transfer-adoption/Cargo.toml
 
       - name: Optimize Wasm (wasm-opt -Oz --mvp-features)
         run: |
-          RAW=target/wasm32v1-none/release/kora_stellar.wasm
-          OPT=target/wasm32v1-none/release/kora_stellar.optimized.wasm
-          if [ ! -f "$RAW" ]; then
-            echo "No Wasm artifact at $RAW" >&2
-            exit 1
-          fi
-          wasm-opt -Oz --mvp-features "$RAW" -o "$OPT"
-          echo "raw:       $(stat -c%s "$RAW") B"
-          echo "optimized: $(stat -c%s "$OPT") B"
+          mkdir -p dist
+          for NAME in kora_stellar pet_transfer_adoption; do
+            RAW=target/wasm32v1-none/release/${NAME}.wasm
+            OPT=target/wasm32v1-none/release/${NAME}.optimized.wasm
+            if [ ! -f "$RAW" ]; then
+              echo "No Wasm artifact at $RAW" >&2
+              exit 1
+            fi
+            wasm-opt -Oz --mvp-features "$RAW" -o "$OPT"
+            echo "${NAME} raw:       $(stat -c%s "$RAW") B"
+            echo "${NAME} optimized: $(stat -c%s "$OPT") B"
+            cp "$OPT" "dist/${NAME}.optimized.wasm"
+          done
+          (cd dist && sha256sum *.optimized.wasm > SHA256SUMS && cat SHA256SUMS)
 
       - name: Report contract Wasm size
         run: |
@@ -161,9 +194,16 @@ jobs:
       - name: Upload optimized Wasm artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kora-stellar-wasm
-          path: target/wasm32v1-none/release/kora_stellar.optimized.wasm
+          name: stellar-contracts-wasm-${{ github.sha }}
+          path: |
+            dist/kora_stellar.optimized.wasm
+            dist/pet_transfer_adoption.optimized.wasm
+            dist/SHA256SUMS
+          if-no-files-found: error
           retention-days: 14
+
+      - name: Verify checksums of uploaded Wasm
+        run: cd dist && sha256sum -c SHA256SUMS
 
       - name: Test Stellar contracts
         working-directory: stellar-contracts
@@ -197,7 +237,7 @@ jobs:
           targets: wasm32v1-none
 
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli --version 25.2.0
+        run: cargo install --locked stellar-cli --version "$STELLAR_CLI_VERSION"
 
       - name: Install wasm-opt (binaryen)
         run: sudo apt-get update && sudo apt-get install -y binaryen
