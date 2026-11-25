@@ -35,7 +35,7 @@ jobs:
           python-version: "3.12"
 
       - name: Run the checker fixture suite
-        run: python3 -m unittest scripts/test_check_error_codes.py
+        run: python3 -m unittest discover -s scripts -p "test_check_error_codes.py"
 
       - name: Compare the error tables with the contract enums
         run: python3 scripts/check_error_codes.py
