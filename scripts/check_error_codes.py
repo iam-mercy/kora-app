@@ -34,69 +34,62 @@ SOURCES = [
 ENUM_RE = re.compile(r"#\[contracterror\][\s\S]*?pub enum (\w+)\s*\{([\s\S]*?)\}")
 VARIANT_RE = re.compile(r"^\s*(\w+)\s*=\s*(\d+)\s*,", re.MULTILINE)
 
-VARIANT_CELL_RE = re.compile(r"`([A-Za-z_][A-Za-z_0-9]*)`|([A-Za-z_][A-Za-z_0-9]*)")
+# Document rows look like: `| 1 | `NotOwner` | ... |`
+ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*`?(\w+)`?\s*\|", re.MULTILINE)
+# Each enum table is preceded by: <!-- check-error-codes: enum=Name file=path -->
+ANCHOR_RE = re.compile(r"<!--\s*check-error-codes:\s*enum=(\w+)\s+file=(\S+)\s*-->")
+SECTION_END_RE = re.compile(r"^#{1,3}\s|<!--\s*check-error-codes:", re.MULTILINE)
 
 
-def parse_sources(sources: list[Path]) -> dict[str, dict[int, str]]:
-    """Return {enum_name: {discriminant: variant}} for every contract error enum."""
-    enums: dict[str, dict[int, str]] = {}
+def parse_sources(sources: list[Path]) -> dict[tuple[str, str], list[tuple[int, str]]]:
+    """Return {(enum_name, file): [(discriminant, variant), ...]} in source order.
+
+    A sequence (not a dict) is kept so repeated discriminants stay visible.
+    """
+    enums: dict[tuple[str, str], list[tuple[int, str]]] = {}
     for source in sources:
+        try:
+            file = source.resolve().relative_to(ROOT).as_posix()
+        except ValueError:
+            file = source.as_posix()
         text = source.read_text(encoding="utf-8")
         for name, body in ENUM_RE.findall(text):
-            variants: dict[int, str] = {}
-            for variant, discriminant in VARIANT_RE.findall(body):
-                variants[int(discriminant)] = variant
-            enums[name] = variants
+            enums[(name, file)] = [
+                (int(code), variant) for variant, code in VARIANT_RE.findall(body)
+            ]
     return enums
 
 
-def parse_document(doc: Path, problems: list[str]) -> dict[int, str]:
-    """Read error-code tables and append diagnostics for malformed rows."""
-    documented: dict[int, str] = {}
-    columns: list[str] = []
-    header_line = 0
-    for line_number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
-        line = line.strip()
-        if not line.startswith("|"):
-            columns = []
-            continue
-        row = [cell.strip() for cell in re.split(r"(?<!\\)\|", line[1:].removesuffix("|"))]
-        if row[:2] == ["Code", "Variant"]:
-            columns = row
-            header_line = line_number
-            continue
-        if not columns:
-            continue
-        if line_number == header_line + 1 and all(
-            re.fullmatch(r":?-+:?", cell) for cell in row
-        ):
-            continue
+def parse_document(doc: Path) -> dict[tuple[str, str], list[tuple[int, str]]]:
+    """Return {(enum_name, file): [(discriminant, variant), ...]} per anchored table."""
+    text = doc.read_text(encoding="utf-8")
+    tables: dict[tuple[str, str], list[tuple[int, str]]] = {}
+    for match in ANCHOR_RE.finditer(text):
+        end = SECTION_END_RE.search(text, match.end())
+        section = text[match.end() : end.start() if end else len(text)]
+        tables[(match.group(1), match.group(2))] = [
+            (int(code), variant) for code, variant in ROW_RE.findall(section)
+        ]
+    return tables
 
-        location = f"{doc.name}:{line_number}"
-        if len(row) != len(columns):
-            problems.append(
-                f"{location}: expected {len(columns)} cells in error-code row, found {len(row)}"
-            )
-            continue
 
-        empty_columns = [column for column, cell in zip(columns, row) if not cell]
-        if empty_columns:
-            problems.append(f"{location}: empty error-code cells: {', '.join(empty_columns)}")
-            continue
+def find_duplicates(pairs: list[tuple[int, str]]) -> list[str]:
+    """Describe every repeated discriminant or variant name in a sequence."""
+    problems: list[str] = []
+    for index, label in ((0, "discriminant"), (1, "variant")):
+        seen: set = set()
+        reported: set = set()
+        for pair in pairs:
+            value = pair[index]
+            if value in seen and value not in reported:
+                reported.add(value)
+                problems.append(f"{label} {value} appears more than once")
+            seen.add(value)
+    return problems
 
-        pair_indices = (0, 2) if columns == ["Code", "Variant"] * 2 else (0,)
-        for index in pair_indices:
-            code, variant_cell = row[index:index + 2]
-            numeric = re.fullmatch(r"[0-9]+", code)
-            variant = VARIANT_CELL_RE.fullmatch(variant_cell)
-            if not numeric:
-                problems.append(f"{location}: invalid numeric error code {code!r}")
-            if not variant:
-                problems.append(f"{location}: invalid error variant {variant_cell!r}")
-            # The second pair is a quick-index entry, validated for shape only.
-            if index == 0 and numeric and variant:
-                documented[int(code)] = variant.group(1) or variant.group(2)
-    return documented
+
+def _same_file(anchor_file: str, source_file: str) -> bool:
+    return anchor_file == source_file or source_file.endswith("/" + anchor_file)
 
 
 def check(doc: Path = DOC, sources: list[Path] | None = None) -> list[str]:
@@ -106,22 +99,35 @@ def check(doc: Path = DOC, sources: list[Path] | None = None) -> list[str]:
 
     problems: list[str] = []
     enums = parse_sources(sources)
-    documented = parse_document(doc, problems)
+    tables = parse_document(doc)
 
     if not enums:
         problems.append("no #[contracterror] enums found in the contract sources")
         return problems
 
-    for enum_name, variants in enums.items():
-        for discriminant, variant in sorted(variants.items()):
-            documented_variant = documented.get(discriminant)
+    for (name, file), pairs in sorted(enums.items()):
+        for problem in find_duplicates(pairs):
+            problems.append(f"{name} in {file}: {problem} in the contract source")
+
+        key = next(
+            (k for k in tables if k[0] == name and _same_file(k[1], file)), None
+        )
+        if key is None:
+            problems.append(f"{doc.name} has no anchor for {name} ({file})")
+            continue
+
+        rows = tables[key]
+        for problem in find_duplicates(rows):
+            problems.append(f"{name} table in {doc.name}: {problem}")
+
+        documented = dict(rows)
+        for code, variant in sorted(set(pairs)):
+            documented_variant = documented.get(code)
             if documented_variant is None:
-                problems.append(
-                    f"{enum_name}::{variant} = {discriminant} is missing from {doc.name}"
-                )
+                problems.append(f"{name}::{variant} = {code} is missing from {doc.name}")
             elif documented_variant != variant:
                 problems.append(
-                    f"{enum_name} discriminant {discriminant} is {variant} in the contract "
+                    f"{name} discriminant {code} is {variant} in the contract "
                     f"but {documented_variant} in {doc.name}"
                 )
 

@@ -496,3 +496,55 @@ fn test_get_pet_count_by_owner_independent_per_owner() {
     assert_eq!(client.get_pet_count_by_owner(&owner1), 2);
     assert_eq!(client.get_pet_count_by_owner(&owner2), 1);
 }
+
+// Issue #445: series queries must isolate different metric keys.
+// Composite-keyed stat points for one metric key must never leak into a
+// query for a different metric key, including unknown keys and points
+// sharing identical timestamps.
+#[test]
+fn test_get_stat_series_isolates_metric_keys() {
+    let (env, client, _admin) = setup_env();
+    let key_a = String::from_str(&env, "MetricA");
+    let key_b = String::from_str(&env, "MetricB");
+    let key_unknown = String::from_str(&env, "DoesNotExist");
+
+    env.as_contract(&client.address, || {
+        // Interleave writes to two distinct metric keys at the same
+        // timestamps to ensure the composite storage key (not insertion
+        // order alone) is what isolates them.
+        env.ledger().with_mut(|l| l.timestamp = 100);
+        KoraContract::record_stat_point(&env, key_a.clone(), 1);
+        KoraContract::record_stat_point(&env, key_b.clone(), 1000);
+
+        env.ledger().with_mut(|l| l.timestamp = 200);
+        KoraContract::record_stat_point(&env, key_a.clone(), 2);
+        KoraContract::record_stat_point(&env, key_b.clone(), 2000);
+
+        env.ledger().with_mut(|l| l.timestamp = 300);
+        KoraContract::record_stat_point(&env, key_a.clone(), 3);
+        KoraContract::record_stat_point(&env, key_b.clone(), 3000);
+    });
+
+    let series_a = client.get_stat_series(&key_a, &0, &u64::MAX);
+    let series_b = client.get_stat_series(&key_b, &0, &u64::MAX);
+    let series_unknown = client.get_stat_series(&key_unknown, &0, &u64::MAX);
+
+    assert_eq!(series_a.len(), 3);
+    assert_eq!(series_b.len(), 3);
+    assert_eq!(series_unknown.len(), 0);
+
+    for p in series_a.iter() {
+        assert!(p.value < 1000, "key A series leaked a key B value");
+    }
+    for p in series_b.iter() {
+        assert!(p.value >= 1000, "key B series leaked a key A value");
+    }
+
+    // Same timestamps across keys must not cause cross-contamination either.
+    let overlap_a = client.get_stat_series(&key_a, &100, &100);
+    let overlap_b = client.get_stat_series(&key_b, &100, &100);
+    assert_eq!(overlap_a.len(), 1);
+    assert_eq!(overlap_a.get(0).unwrap().value, 1);
+    assert_eq!(overlap_b.len(), 1);
+    assert_eq!(overlap_b.get(0).unwrap().value, 1000);
+}

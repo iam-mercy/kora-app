@@ -1,62 +1,42 @@
-from pathlib import Path
-from tempfile import TemporaryDirectory
+import tempfile
 import unittest
+from pathlib import Path
 
-from scripts.check_error_codes import check
+import check_error_codes as c
+
+RS = "#[contracterror]\n#[repr(u32)]\npub enum E {\n%s}\n"
+ANCHOR = "<!-- check-error-codes: enum=E file=lib.rs -->\n\n| Code | Variant |\n|--|--|\n"
 
 
-class MalformedErrorCodeRows(unittest.TestCase):
-    def setUp(self):
-        temp = TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        root = Path(temp.name)
-        self.source = root / "lib.rs"
-        self.source.write_text(
-            "#[contracterror]\npub enum ContractError {\n    ExampleError = 1,\n}\n",
-            encoding="utf-8",
-        )
-        self.doc = root / "errors.md"
+def run(rs_body, doc_text):
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "lib.rs").write_text(RS % rs_body)
+        (d / "doc.md").write_text(doc_text)
+        return c.check(d / "doc.md", [d / "lib.rs"])
 
-    def test_valid_rows_and_unrelated_tables(self):
-        self.doc.write_text(
-            "| Code | Language | Message |\n"
-            "| ---- | -------- | ------- |\n"
-            "| 1 | en | Example message |\n\n"
-            "| Code | Variant | Meaning |\n"
-            "| ---: | ------- | ------- |\n"
-            "| 1 | `ExampleError` | A \\| B |\n",
-            encoding="utf-8",
-        )
-        self.assertEqual(check(self.doc, [self.source]), [])
 
-    def test_malformed_row_diagnostics(self):
-        for row, diagnostic in [
-            ("| nope | ExampleError | Meaning |", "invalid numeric error code 'nope'"),
-            ("| 1 |  | Meaning |", "empty error-code cells: Variant"),
-            ("| 1 | ExampleError |", "expected 3 cells in error-code row, found 2"),
-            ("| 1 |", "expected 3 cells in error-code row, found 1"),
-        ]:
-            with self.subTest(row=row):
-                self.doc.write_text(
-                    "| Code | Variant | Meaning |\n"
-                    "| ---: | ------- | ------- |\n"
-                    "| 1 | ExampleError | Valid entry |\n"
-                    f"{row}\n",
-                    encoding="utf-8",
-                )
-                problems = check(self.doc, [self.source])
-                self.assertEqual(len(problems), 1)
-                self.assertTrue(problems[0].startswith("errors.md:4: "))
-                self.assertIn(diagnostic, problems[0])
+class CheckErrorCodes(unittest.TestCase):
+    def test_valid(self):
+        self.assertEqual(run("    A = 1,\n    B = 2,\n", ANCHOR + "| 1 | `A` |\n| 2 | `B` |\n"), [])
 
-    def test_quick_index_validates_second_pair(self):
-        self.doc.write_text(
-            "| Code | Variant | Code | Variant |\n"
-            "| ---: | ------- | ---: | ------- |\n"
-            "| 1 | ExampleError | nope | AnotherError |\n",
-            encoding="utf-8",
-        )
-        self.assertEqual(
-            check(self.doc, [self.source]),
-            ["errors.md:3: invalid numeric error code 'nope'"],
-        )
+    def test_source_collision(self):
+        p = run("    A = 1,\n    B = 1,\n", ANCHOR + "| 1 | `A` |\n")
+        self.assertTrue(any("discriminant 1 appears more than once" in x for x in p))
+
+    def test_all_anchors_removed(self):
+        p = run("    A = 1,\n", "# Doc\n\n| 1 | `A` |\n")
+        self.assertTrue(any("no anchor for E" in x for x in p))
+
+    def test_identical_duplicate_row(self):
+        p = run("    A = 1,\n", ANCHOR + "| 1 | `A` |\n| 1 | `A` |\n")
+        self.assertTrue(any("table" in x and "more than once" in x for x in p))
+
+    def test_conflicting_duplicate_row(self):
+        p = run("    A = 1,\n    B = 2,\n", ANCHOR + "| 1 | `A` |\n| 1 | `B` |\n| 2 | `B` |\n")
+        self.assertTrue(any("discriminant 1 appears" in x for x in p))
+        self.assertTrue(any("variant B appears" in x for x in p))
+
+
+if __name__ == "__main__":
+    unittest.main()

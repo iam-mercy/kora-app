@@ -55,7 +55,7 @@ npx hardhat compile
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Kora contributors. Both `celo-contracts/` and `stellar-contracts/` are covered by this root license.
 
 ## Handsoff notes
 
