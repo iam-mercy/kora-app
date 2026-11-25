@@ -378,6 +378,19 @@ const MAX_BEHAVIOR_DESCRIPTION_LEN: u32 = 500;
 /// call. (Issue #301)
 const MAX_WEIGHT_HISTORY_PAGE_SIZE: u32 = 50;
 
+/// Maximum byte length of an insurance claim description. (Issue #460)
+const MAX_INSURANCE_CLAIM_DESCRIPTION_LEN: u32 = 500;
+/// Maximum number of items returned per page for insurance policy/claim
+/// collection queries. (Issue #461)
+const MAX_INSURANCE_PAGE_SIZE: u32 = 50;
+
+/// Maximum byte length of an insurance policy ID. (Issue #459)
+const MAX_INSURANCE_POLICY_ID_LEN: u32 = 64;
+/// Maximum byte length of an insurance provider name. (Issue #459)
+const MAX_INSURANCE_PROVIDER_LEN: u32 = 100;
+/// Maximum byte length of an insurance coverage type string. (Issue #459)
+const MAX_INSURANCE_COVERAGE_TYPE_LEN: u32 = 50;
+
 /// Maximum allowed drift, in seconds, between a caller-supplied feeding
 /// timestamp and the current ledger time. A small allowance (5 minutes)
 /// accommodates minor clock skew between a client and the ledger, while
@@ -3288,6 +3301,42 @@ impl KoraContract {
         policies
     }
 
+    /// Bounded, cursor-based page over a pet's insurance policies. (Issue #461)
+    ///
+    /// `start_after` is the last 1-based policy index already returned by the
+    /// caller (0 to start from the beginning). `limit` is capped at
+    /// `MAX_INSURANCE_PAGE_SIZE`; a `limit` of 0 returns an empty page without
+    /// scanning any storage. Concatenating successive pages reproduces the
+    /// same ordered result as `get_all_pet_policies`.
+    pub fn get_pet_policies_page(
+        env: Env,
+        pet_id: u64,
+        start_after: u64,
+        limit: u32,
+    ) -> Vec<InsurancePolicy> {
+        let mut policies = Vec::new(&env);
+        if limit == 0 {
+            return policies;
+        }
+        let page_limit = limit.min(MAX_INSURANCE_PAGE_SIZE) as u64;
+        let count = env
+            .storage()
+            .instance()
+            .get::<InsuranceKey, u64>(&InsuranceKey::PetPolicyCount(pet_id))
+            .unwrap_or(0);
+        let mut index = start_after.saturating_add(1);
+        let end = count.min(start_after.saturating_add(page_limit));
+        while index <= end {
+            if let Some(policy) = env.storage().instance().get::<InsuranceKey, InsurancePolicy>(
+                &InsuranceKey::PetPolicyIndex((pet_id, index)),
+            ) {
+                policies.push_back(policy);
+            }
+            index += 1;
+        }
+        policies
+    }
+
     pub fn get_pet_insurance(env: Env, pet_id: u64) -> Option<InsurancePolicy> {
         let count = env
             .storage()
@@ -3321,7 +3370,14 @@ impl KoraContract {
             None => return false,
         };
         pet.owner.require_auth();
-        if policy_id.is_empty() || expiry_date < env.ledger().timestamp() {
+        if policy_id.is_empty()
+            || policy_id.len() > MAX_INSURANCE_POLICY_ID_LEN
+            || provider.is_empty()
+            || provider.len() > MAX_INSURANCE_PROVIDER_LEN
+            || coverage_type.is_empty()
+            || coverage_type.len() > MAX_INSURANCE_COVERAGE_TYPE_LEN
+            || expiry_date < env.ledger().timestamp()
+        {
             return false;
         }
         let count = env
@@ -3462,6 +3518,12 @@ impl KoraContract {
         if !policy.active || policy.expiry_date < now || amount > policy.coverage_limit {
             return None;
         }
+        if amount == 0
+            || description.is_empty()
+            || description.len() > MAX_INSURANCE_CLAIM_DESCRIPTION_LEN
+        {
+            env.panic_with_error(ContractError::InvalidInput);
+        }
         let fingerprint = InsuranceKey::ClaimByInvoice((
             pet_id,
             policy.policy_id.clone(),
@@ -3499,12 +3561,6 @@ impl KoraContract {
         env.storage().instance().set(&InsuranceKey::Claim(claim_id), &claim);
         env.storage().instance().set(&InsuranceKey::ClaimCount, &claim_id);
         env.storage().instance().set(&fingerprint, &claim_id);
-        let pet_count = env
-            .storage()
-            .instance()
-            .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimCount(pet_id))
-            .unwrap_or(0);
-        let next_pet_count = pet_count.checked_add(1)?;
         env.storage().instance().set(
             &InsuranceKey::PetClaimIndex((pet_id, next_pet_count)),
             &claim_id,
@@ -3575,6 +3631,83 @@ impl KoraContract {
                     }
                 }
             }
+        }
+        claims
+    }
+
+    /// Bounded, cursor-based page over a pet's insurance claims. (Issue #461)
+    ///
+    /// `start_after` is the last 1-based claim index already scanned (0 to
+    /// start from the beginning). `limit` is capped at
+    /// `MAX_INSURANCE_PAGE_SIZE` claim *slots scanned* (not matches found), so
+    /// a page never scans an unbounded history even when matches are sparse.
+    /// Concatenating successive pages reproduces the same ordered result as
+    /// `get_pet_insurance_claims`.
+    pub fn get_pet_insurance_claims_page(
+        env: Env,
+        pet_id: u64,
+        start_after: u64,
+        limit: u32,
+    ) -> Vec<InsuranceClaim> {
+        let mut claims = Vec::new(&env);
+        if limit == 0 {
+            return claims;
+        }
+        let page_limit = limit.min(MAX_INSURANCE_PAGE_SIZE) as u64;
+        let count = Self::get_insurance_claim_count(env.clone(), pet_id);
+        let mut index = start_after.saturating_add(1);
+        let end = count.min(start_after.saturating_add(page_limit));
+        while index <= end {
+            if let Some(claim_id) = env
+                .storage()
+                .instance()
+                .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimIndex((pet_id, index)))
+            {
+                if let Some(claim) = Self::get_insurance_claim(env.clone(), claim_id) {
+                    claims.push_back(claim);
+                }
+            }
+            index += 1;
+        }
+        claims
+    }
+
+    /// Bounded, cursor-based, status-filtered page over a pet's insurance
+    /// claims. (Issue #461)
+    ///
+    /// Scans at most `limit` (capped at `MAX_INSURANCE_PAGE_SIZE`) claim
+    /// slots starting after `start_after`, regardless of how many match
+    /// `status` — so a page with sparse matches still terminates within a
+    /// bounded scan budget instead of scanning the full history. Concatenated
+    /// pages reproduce the same ordered result as `get_claims_by_status`.
+    pub fn get_claims_by_status_page(
+        env: Env,
+        pet_id: u64,
+        status: InsuranceClaimStatus,
+        start_after: u64,
+        limit: u32,
+    ) -> Vec<InsuranceClaim> {
+        let mut claims = Vec::new(&env);
+        if limit == 0 {
+            return claims;
+        }
+        let page_limit = limit.min(MAX_INSURANCE_PAGE_SIZE) as u64;
+        let count = Self::get_insurance_claim_count(env.clone(), pet_id);
+        let mut index = start_after.saturating_add(1);
+        let end = count.min(start_after.saturating_add(page_limit));
+        while index <= end {
+            if let Some(claim_id) = env
+                .storage()
+                .instance()
+                .get::<InsuranceKey, u64>(&InsuranceKey::PetClaimIndex((pet_id, index)))
+            {
+                if let Some(claim) = Self::get_insurance_claim(env.clone(), claim_id) {
+                    if claim.status == status {
+                        claims.push_back(claim);
+                    }
+                }
+            }
+            index += 1;
         }
         claims
     }
